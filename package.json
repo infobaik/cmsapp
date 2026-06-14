@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --mode client && vite build",
+    "build": "tailwindcss -i ./app/style.css -o ./public/style.css && vite build --mode client && vite build",
     "deploy": "wrangler pages deploy dist",
     "db:init-local": "wrangler d1 execute db_multisupplier --local --file=src/db/schema.sql",
     "db:init-remote": "wrangler d1 execute db_multisupplier --file=src/db/schema.sql",
