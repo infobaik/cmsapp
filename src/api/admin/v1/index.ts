@@ -1,9 +1,35 @@
 import { Hono } from 'hono'
-import { uploadToCloudinary } from '../../../services/cloudinary'
+import { getCookie } from 'hono/cookie'
+import { uploadToCloudinary } from '../../services/cloudinary'
 
 const app = new Hono()
 
-// --- 1. Pengaturan Website (Disimpan Cepat ke Cloudflare KV) ---
+// ========================================================================
+// MIDDLEWARE PROTEKSI: HANYA ADMIN YANG BOLEH MENGEKSEKUSI API INI
+// ========================================================================
+app.use('/*', async (c, next) => {
+  const sessionId = getCookie(c, 'session_id')
+  if (!sessionId) return c.redirect('/login')
+
+  const user = await c.env.DB.prepare(`
+    SELECT u.id, u.role FROM sessions s 
+    JOIN users u ON s.user_id = u.id 
+    WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP
+  `).bind(sessionId).first()
+
+  // Jika sesi tidak valid atau role bukan admin, tendang keluar
+  if (!user || user.role !== 'admin') {
+    return c.redirect('/login')
+  }
+
+  // Simpan ID admin di context untuk log audit jika diperlukan
+  c.set('admin_user_id', user.id)
+  await next()
+})
+
+// ========================================================================
+// 1. PENGATURAN WEBSITE (DISIMPAN CEPAT KE CLOUDFLARE KV)
+// ========================================================================
 app.post('/settings/update', async (c) => {
   const body = await c.req.parseBody()
   
@@ -22,8 +48,9 @@ app.post('/settings/update', async (c) => {
   }
 })
 
-// --- 2. Pengaturan Sistem Rahasia (Disimpan ke D1) ---
-// Menangani form yang mengupdate sync_secret, kredensial Cloudinary, dll.
+// ========================================================================
+// 2. PENGATURAN SISTEM RAHASIA (DISIMPAN KE D1)
+// ========================================================================
 app.post('/system/update', async (c) => {
   const body = await c.req.parseBody()
   
@@ -47,7 +74,9 @@ app.post('/system/update', async (c) => {
   }
 })
 
-// --- 3. Manajemen Kategori ---
+// ========================================================================
+// 3. MANAJEMEN KATEGORI & LABEL
+// ========================================================================
 app.post('/categories/create', async (c) => {
   const body = await c.req.parseBody()
   const name = body.name as string
@@ -68,7 +97,9 @@ app.post('/categories/create', async (c) => {
   }
 })
 
-// --- 4. Manajemen Produk (Dengan Cloudinary Upload) ---
+// ========================================================================
+// 4. MANAJEMEN PRODUK (DENGAN UPLOAD GAMBAR KE CLOUDINARY)
+// ========================================================================
 app.post('/products/create', async (c) => {
   // Gunakan { all: true } untuk menangkap File (gambar) dan string sekaligus
   const body = await c.req.parseBody({ all: true })
@@ -102,7 +133,9 @@ app.post('/products/create', async (c) => {
   }
 })
 
-// --- 5. Update Data Produk ---
+// ========================================================================
+// 5. UPDATE DATA PRODUK (MENGGANTI HARGA / GAMBAR / STATUS)
+// ========================================================================
 app.post('/products/:id/update', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.parseBody({ all: true })
@@ -139,6 +172,71 @@ app.post('/products/:id/update', async (c) => {
   } catch (error: any) {
     console.error("Gagal update produk:", error)
     return c.redirect(`/admin/products/${id}?error=${encodeURIComponent(error.message)}`)
+  }
+})
+
+// ========================================================================
+// 6. MANAJEMEN PROVIDER H2H (BARU)
+// ========================================================================
+app.post('/providers/create', async (c) => {
+  const body = await c.req.parseBody()
+  
+  const name = body.name as string
+  const apiEndpoint = body.api_endpoint as string
+  const apiKey = body.api_key as string
+  const apiSecret = body.api_secret as string || null
+
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO providers (name, api_endpoint, api_key, api_secret, status)
+      VALUES (?, ?, ?, ?, 'active')
+    `).bind(name, apiEndpoint, apiKey, apiSecret).run()
+
+    return c.redirect('/admin/providers?success=true')
+  } catch (error: any) {
+    console.error("Gagal membuat provider:", error)
+    return c.redirect(`/admin/providers?error=failed`)
+  }
+})
+
+// ========================================================================
+// 7. VALIDASI DEPOSIT MEMBER (BARU)
+// ========================================================================
+
+// A. Menyetujui Deposit
+app.post('/deposits/:id/approve', async (c) => {
+  const depositId = c.req.param('id')
+  
+  try {
+    // 1. Cek deposit apakah valid dan masih pending
+    const deposit = await c.env.DB.prepare(`SELECT user_id, amount FROM deposits WHERE id = ? AND status = 'pending'`).bind(depositId).first()
+    
+    if (!deposit) return c.redirect('/admin/deposits?error=not_found')
+
+    // 2. Gunakan Batch agar transaksi aman (Jika satu gagal, gagal semua)
+    await c.env.DB.batch([
+      // Ubah status deposit
+      c.env.DB.prepare(`UPDATE deposits SET status = 'success' WHERE id = ?`).bind(depositId),
+      // Tambahkan saldo ke dompet user
+      c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(deposit.amount, deposit.user_id)
+    ])
+
+    return c.redirect('/admin/deposits?success=approved')
+  } catch (error) {
+    console.error("Gagal menyetujui deposit:", error)
+    return c.redirect('/admin/deposits?error=system_failed')
+  }
+})
+
+// B. Menolak Deposit
+app.post('/deposits/:id/reject', async (c) => {
+  const depositId = c.req.param('id')
+  
+  try {
+    await c.env.DB.prepare(`UPDATE deposits SET status = 'failed' WHERE id = ? AND status = 'pending'`).bind(depositId).run()
+    return c.redirect('/admin/deposits?success=rejected')
+  } catch (error) {
+    return c.redirect('/admin/deposits?error=system_failed')
   }
 })
 
