@@ -1,5 +1,4 @@
 import { jsxRenderer } from 'hono/jsx-renderer'
-import { Script, Link } from 'honox/server'
 
 export default jsxRenderer(({ children, title }, c) => {
   const user = c.get('user')
@@ -13,11 +12,16 @@ export default jsxRenderer(({ children, title }, c) => {
         
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         
-        {/* INI WAJIB ADA AGAR TAILWIND TAMPIL DI PRODUCTION */}
-        <Link href="/app/style.css" rel="stylesheet" /> 
-        <Script src="/app/client.ts" async />
+        {/* CARA BARBAR: TAG HTML MURNI YANG TIDAK AKAN HILANG */}
+        <link rel="stylesheet" href="/style.css" />
+        
+        {import.meta.env.PROD ? (
+           <script type="module" src="/static/client.js"></script>
+        ) : (
+           <script type="module" src="/app/client.ts"></script>
+        )}
       </head>
-      <body class="font-sans antialiased text-slate-100 bg-slate-950">
+      <body class="font-sans antialiased bg-slate-950 text-slate-100">
         <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
           <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
             <div class="text-xl font-black text-blue-500 italic tracking-tighter">
