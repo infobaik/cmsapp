@@ -1,5 +1,5 @@
 import { jsxRenderer } from 'hono/jsx-renderer'
-import { Script } from 'honox/server' // Hapus Link dari import
+import { Script, Link } from 'honox/server'
 
 export default jsxRenderer(({ children, title }, c) => {
   const user = c.get('user')
@@ -11,13 +11,13 @@ export default jsxRenderer(({ children, title }, c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>{title ? `${title} | Sistem Pintar` : 'Topup PPOB Tercepat'}</title>
         
-        {/* Load Font Modern (Inter) */}
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         
-        {/* Script client.ts ini akan otomatis membawa dan menyuntikkan Tailwind CSS yang sudah dicompile */}
+        {/* INI WAJIB ADA AGAR TAILWIND TAMPIL DI PRODUCTION */}
+        <Link href="/app/style.css" rel="stylesheet" /> 
         <Script src="/app/client.ts" async />
       </head>
-      <body class="font-sans antialiased">
+      <body class="font-sans antialiased text-slate-100 bg-slate-950">
         <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
           <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
             <div class="text-xl font-black text-blue-500 italic tracking-tighter">
