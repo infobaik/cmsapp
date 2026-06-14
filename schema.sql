@@ -8,7 +8,8 @@ CREATE TABLE users (
     referral_code TEXT UNIQUE,
     referred_by_id INTEGER,
     role TEXT CHECK(role IN ('admin', 'member')) DEFAULT 'member',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(referred_by_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 DROP TABLE IF EXISTS sessions;
@@ -88,6 +89,7 @@ CREATE TABLE products (
     order_type TEXT CHECK(order_type IN ('prepaid', 'postpaid')) DEFAULT 'prepaid',
     price REAL NOT NULL,
     status TEXT DEFAULT 'active',
+    UNIQUE(provider_id, provider_product_code),
     FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE CASCADE,
     FOREIGN KEY(provider_id) REFERENCES providers(id) ON DELETE CASCADE
 );
@@ -119,6 +121,36 @@ CREATE TABLE transactions (
     FOREIGN KEY(product_id) REFERENCES products(id)
 );
 
+DROP TABLE IF EXISTS payment_gateways;
+CREATE TABLE payment_gateways (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    api_endpoint TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    secret_key TEXT NOT NULL,
+    status TEXT CHECK(status IN ('active', 'inactive')) DEFAULT 'active',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS deposits;
+CREATE TABLE deposits (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    status TEXT CHECK(status IN ('pending', 'success', 'failed')) DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+DROP TABLE IF EXISTS system_settings;
+CREATE TABLE system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 DROP TABLE IF EXISTS posts;
 CREATE TABLE posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,3 +161,9 @@ CREATE TABLE posts (
     published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE CASCADE
 );
+
+INSERT INTO system_settings (key, value, description) 
+VALUES ('sync_secret', 'super-rahasia-untuk-cron-supplier', 'Secret Key untuk memicu Cronjob Sinkronisasi Provider');
+
+INSERT INTO payment_gateways (code, name, api_endpoint, api_key, secret_key, status) 
+VALUES ('GOPAY_QRIS', 'Gopay Internal Gateway', 'https://qrispay.pages.dev/api', 'gopay_API_KEY_ANDA', 'gopay_API_KEY_ANDA', 'active');
