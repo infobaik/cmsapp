@@ -1,0 +1,30 @@
+{
+  "name": "sistem-multisupplier-pintar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --mode client && vite build",
+    "deploy": "wrangler pages deploy dist",
+    "db:init-local": "wrangler d1 execute db_multisupplier --local --file=src/db/schema.sql",
+    "db:init-remote": "wrangler d1 execute db_multisupplier --file=src/db/schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.1.0",
+    "honox": "^0.1.13",
+    "zod": "^3.22.4",
+    "@hono/zod-validator": "^0.2.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240320.1",
+    "@hono/vite-build": "^0.1.0",
+    "@hono/vite-cloudflare-pages": "^0.2.2",
+    "@hono/vite-dev-server": "^0.10.0",
+    "@types/node": "^20.11.30",
+    "typescript": "^5.4.3",
+    "vite": "^5.2.6",
+    "wrangler": "^3.36.0"
+  }
+}
