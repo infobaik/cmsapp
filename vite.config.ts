@@ -9,11 +9,8 @@ export default defineConfig(({ mode }) => {
       plugins: [client()],
       build: {
         rollupOptions: {
-          output: {
-            entryFileNames: 'static/client.js',
-            chunkFileNames: 'static/[name].js',
-            assetFileNames: 'static/[name].[ext]'
-          }
+          // PERBAIKAN: Gunakan input, biarkan Vite yang mengatur output (dan hash-nya)
+          input: ['./app/client.ts', './app/style.css'],
         }
       }
     }
