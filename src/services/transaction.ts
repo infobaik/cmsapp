@@ -1,8 +1,5 @@
-// src/services/transaction.ts
+import { dispatchProviderOrder } from './providers/index'
 
-// --- 1. FUNGSI HELPER: PEMOTONGAN SALDO ATOMIC ---
-// Fungsi ini menjamin tidak ada 'race condition'. Jika 2 request masuk di milidetik yang sama
-// dan saldo hanya cukup untuk 1 transaksi, D1 (SQLite) akan memblokir request kedua secara otomatis.
 async function atomicDeductWallet(db: D1Database, userId: number, amount: number) {
   const query = `
     UPDATE wallets 
@@ -10,19 +7,15 @@ async function atomicDeductWallet(db: D1Database, userId: number, amount: number
     WHERE user_id = ? AND balance_available >= ?
     RETURNING balance_available
   `
-  
   const result = await db.prepare(query).bind(amount, userId, amount).first()
 
   if (!result) {
-    // Error ini akan ditangkap oleh try-catch di API route dan diarahkan ke frontend
-    // sebagai parameter ?warning=saldo_kurang
-    throw new Error('INSUFFICIENT_BALANCE') 
+    throw new Error('INSUFFICIENT_BALANCE')
   }
 
-  return result.balance_available
+  return result.balance_available as number
 }
 
-// --- 2. ALUR PREPAID (Satu Langkah: Beli & Langsung Potong Saldo) ---
 export async function processPrepaidOrder(
   db: D1Database, 
   userId: number, 
@@ -30,8 +23,14 @@ export async function processPrepaidOrder(
   customerNumber: string, 
   idempotencyKey: string
 ) {
-  // 1. Cek validitas produk
-  const product = await db.prepare(`SELECT id, price, order_type, status FROM products WHERE id = ?`).bind(productId).first()
+  const query = `
+    SELECT p.price, p.order_type, p.status, p.provider_product_code,
+           pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret 
+    FROM products p
+    JOIN providers pr ON p.provider_id = pr.id
+    WHERE p.id = ?
+  `
+  const product = await db.prepare(query).bind(productId).first()
   
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
   if (product.order_type !== 'prepaid') throw new Error('INVALID_ORDER_TYPE')
@@ -39,38 +38,43 @@ export async function processPrepaidOrder(
   const trxId = crypto.randomUUID()
   const totalPrice = product.price as number
 
-  // 2. KUNCI IDEMPOTENCY: Catat transaksi awal
-  // Jika user double klik, D1 akan melempar error "UNIQUE constraint failed" pada idempotency_key
   const insertTrx = `
     INSERT INTO transactions (id, user_id, product_id, customer_number, order_type, total_price, status, idempotency_key)
     VALUES (?, ?, ?, ?, 'prepaid', ?, 'processing', ?)
   `
   await db.prepare(insertTrx).bind(trxId, userId, productId, customerNumber, totalPrice, idempotencyKey).run()
 
-  // 3. POTONG SALDO ATOMIC (Aman dari antrean / bot)
   await atomicDeductWallet(db, userId, totalPrice)
 
   try {
-    // 4. TEMBAK API PROVIDER (Simulasi)
-    // Di dunia nyata: const response = await fetch('https://api.supplier.com/topup', { ... })
-    const mockProviderResponse = JSON.stringify({ status: "SUCCESS", sn: "SN-1234567890" })
+    const providerResult = await dispatchProviderOrder(
+      product.provider_name as string,
+      'payment',
+      { 
+        endpoint: product.api_endpoint as string, 
+        key: product.api_key as string, 
+        secret: product.api_secret as string 
+      },
+      product.provider_product_code as string,
+      customerNumber,
+      trxId
+    )
 
-    // 5. UPDATE STATUS KE SUCCESS
     await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ? WHERE id = ?`)
-      .bind(mockProviderResponse, trxId).run()
+      .bind(JSON.stringify(providerResult.raw_response), trxId).run()
 
-    return { success: true, trxId, sn: "SN-1234567890" }
-  } catch (providerError) {
-    // JIKA PROVIDER GAGAL/GANGGUAN: Kembalikan saldo pengguna (Refund)
+    return { success: true, trxId, sn: providerResult.sn }
+  } catch (providerError: any) {
     await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`)
       .bind(totalPrice, userId).run()
     
-    await db.prepare(`UPDATE transactions SET status = 'failed' WHERE id = ?`).bind(trxId).run()
+    await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
+      .bind(providerError.message, trxId).run()
+      
     throw new Error('PROVIDER_FAILED')
   }
 }
 
-// --- 3. ALUR POSTPAID LANGKAH 1: Cek Tagihan (Inquiry) ---
 export async function createPostpaidInquiry(
   db: D1Database, 
   userId: number, 
@@ -78,69 +82,104 @@ export async function createPostpaidInquiry(
   customerNumber: string, 
   idempotencyKey: string
 ) {
-  // Cek validitas produk
-  const product = await db.prepare(`SELECT id, price, order_type, status FROM products WHERE id = ?`).bind(productId).first()
+  const query = `
+    SELECT p.price, p.order_type, p.status, p.provider_product_code,
+           pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret 
+    FROM products p
+    JOIN providers pr ON p.provider_id = pr.id
+    WHERE p.id = ?
+  `
+  const product = await db.prepare(query).bind(productId).first()
   
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
   if (product.order_type !== 'postpaid') throw new Error('INVALID_ORDER_TYPE')
 
-  // TEMBAK API PROVIDER UNTUK CEK TAGIHAN (Simulasi)
-  // Di dunia nyata, response ini berisi nama pelanggan dan jumlah tagihan PLN/PDAM
-  const mockBillAmount = 150000 
-  const adminMarkup = product.price as number // Keuntungan web (misal Rp 2.500)
-  const totalPrice = mockBillAmount + adminMarkup
-
   const trxId = crypto.randomUUID()
-  const mockProviderResponse = JSON.stringify({ customer_name: "Budi Santoso", bill: 150000 })
 
-  // Insert ke transaksi dengan status 'waiting_payment'. Saldo BELUM dipotong.
+  const inquiryResult = await dispatchProviderOrder(
+    product.provider_name as string,
+    'inquiry',
+    { 
+      endpoint: product.api_endpoint as string, 
+      key: product.api_key as string, 
+      secret: product.api_secret as string 
+    },
+    product.provider_product_code as string,
+    customerNumber,
+    trxId
+  )
+
+  const billAmount = inquiryResult.bill_amount
+  const adminMarkup = product.price as number
+  const totalPrice = billAmount + adminMarkup
+
   const insertTrx = `
     INSERT INTO transactions (id, user_id, product_id, customer_number, order_type, bill_amount, admin_markup, total_price, status, provider_response, idempotency_key)
     VALUES (?, ?, ?, ?, 'postpaid', ?, ?, ?, 'waiting_payment', ?, ?)
   `
   await db.prepare(insertTrx).bind(
-    trxId, userId, productId, customerNumber, mockBillAmount, adminMarkup, totalPrice, mockProviderResponse, idempotencyKey
+    trxId, userId, productId, customerNumber, billAmount, adminMarkup, totalPrice, JSON.stringify(inquiryResult.raw_response), idempotencyKey
   ).run()
 
-  return { trxId, customerName: "Budi Santoso", billAmount: mockBillAmount, adminMarkup, totalPrice }
+  return { 
+    trxId, 
+    customerName: inquiryResult.customer_name, 
+    billAmount, 
+    adminMarkup, 
+    totalPrice 
+  }
 }
 
-// --- 4. ALUR POSTPAID LANGKAH 2: Konfirmasi Bayar ---
 export async function payPostpaidBill(
   db: D1Database, 
   userId: number, 
   trxId: string
 ) {
-  // 1. Ambil transaksi yang sedang menunggu pembayaran
-  const trx = await db.prepare(`SELECT id, total_price, status FROM transactions WHERE id = ? AND user_id = ?`).bind(trxId, userId).first()
+  const trxQuery = `
+    SELECT t.id, t.total_price, t.status, t.customer_number, 
+           p.provider_product_code, pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret
+    FROM transactions t
+    JOIN products p ON t.product_id = p.id
+    JOIN providers pr ON p.provider_id = pr.id
+    WHERE t.id = ? AND t.user_id = ?
+  `
+  const trx = await db.prepare(trxQuery).bind(trxId, userId).first()
   
   if (!trx) throw new Error('TRANSACTION_NOT_FOUND')
   if (trx.status !== 'waiting_payment') throw new Error('TRANSACTION_ALREADY_PROCESSED')
 
-  // 2. Kunci transaksi menjadi processing agar tidak bisa diklik bayar 2 kali oleh user (Idempotency tambahan)
   const lockResult = await db.prepare(`UPDATE transactions SET status = 'processing' WHERE id = ? AND status = 'waiting_payment'`).bind(trxId).run()
   if (lockResult.meta.changes === 0) {
      throw new Error('TRANSACTION_ALREADY_PROCESSED')
   }
 
-  // 3. POTONG SALDO ATOMIC
   await atomicDeductWallet(db, userId, trx.total_price as number)
 
   try {
-    // 4. TEMBAK API PROVIDER UNTUK PELUNASAN (Simulasi)
-    const mockProviderResponse = JSON.stringify({ status: "PAID", receipt_url: "https://..." })
+    const providerResult = await dispatchProviderOrder(
+      trx.provider_name as string,
+      'payment',
+      { 
+        endpoint: trx.api_endpoint as string, 
+        key: trx.api_key as string, 
+        secret: trx.api_secret as string 
+      },
+      trx.provider_product_code as string,
+      trx.customer_number as string,
+      trxId
+    )
 
-    // 5. UPDATE STATUS KE SUCCESS
     await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ? WHERE id = ?`)
-      .bind(mockProviderResponse, trxId).run()
+      .bind(JSON.stringify(providerResult.raw_response), trxId).run()
 
-    return { success: true, trxId }
-  } catch (providerError) {
-    // JIKA GAGAL BAYAR DI PROVIDER: Refund saldo dan kembalikan status ke failed
+    return { success: true, trxId, sn: providerResult.sn }
+  } catch (providerError: any) {
     await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`)
       .bind(trx.total_price, userId).run()
     
-    await db.prepare(`UPDATE transactions SET status = 'failed' WHERE id = ?`).bind(trxId).run()
+    await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
+      .bind(providerError.message, trxId).run()
+      
     throw new Error('PROVIDER_FAILED')
   }
 }
