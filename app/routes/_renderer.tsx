@@ -1,5 +1,5 @@
 import { jsxRenderer } from 'hono/jsx-renderer'
-import { Script, Link } from 'honox/server' // TAMBAHKAN Link di sini
+import { Script } from 'honox/server' // Hapus Link dari import
 
 export default jsxRenderer(({ children, title }, c) => {
   const user = c.get('user')
@@ -14,9 +14,7 @@ export default jsxRenderer(({ children, title }, c) => {
         {/* Load Font Modern (Inter) */}
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         
-        {/* INJEKSI TAILWIND CSS MELALUI VITE HONOX */}
-        <Link href="/app/style.css" rel="stylesheet" /> 
-        
+        {/* Script client.ts ini akan otomatis membawa dan menyuntikkan Tailwind CSS yang sudah dicompile */}
         <Script src="/app/client.ts" async />
       </head>
       <body class="font-sans antialiased">
@@ -27,7 +25,6 @@ export default jsxRenderer(({ children, title }, c) => {
             </div>
             
             <ul class="flex items-center gap-6 text-sm font-semibold text-slate-300">
-              {/* Logika Cerdas Berdasarkan Context User */}
               {!user ? (
                 <>
                   <li><a href="/" class="hover:text-white transition">Beranda</a></li>
@@ -47,7 +44,6 @@ export default jsxRenderer(({ children, title }, c) => {
           </nav>
         </header>
         
-        {/* Konten Utama akan dirender di sini */}
         <main>
           {children}
         </main>
