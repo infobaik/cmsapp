@@ -6,7 +6,16 @@ import { defineConfig } from 'vite'
 export default defineConfig(({ mode }) => {
   if (mode === 'client') {
     return {
-      plugins: [client()]
+      plugins: [client()],
+      build: {
+        rollupOptions: {
+          output: {
+            entryFileNames: 'static/client.js',
+            chunkFileNames: 'static/[name].js',
+            assetFileNames: 'static/[name].[ext]'
+          }
+        }
+      }
     }
   }
   return {
