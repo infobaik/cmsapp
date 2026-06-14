@@ -2,35 +2,48 @@ import { Hono } from 'hono'
 
 const app = new Hono()
 
-// Proteksi: Hanya bisa diakses oleh sistem atau admin
+// Proteksi: Hanya bisa diakses oleh sistem (Cron) atau admin yang membawa Secret Key yang valid
 app.use('/*', async (c, next) => {
-  const secret = c.req.header('x-sync-secret')
-  if (secret !== c.env.SYNC_SECRET) return c.json({ error: 'Akses Ditolak' }, 403)
+  const incomingSecret = c.req.header('x-sync-secret')
+  
+  // 1. Tarik secret key terbaru langsung dari Database D1
+  const setting = await c.env.DB.prepare(`SELECT value FROM system_settings WHERE key = 'sync_secret'`).first()
+  
+  if (!setting || incomingSecret !== setting.value) {
+    return c.json({ error: 'Akses Ditolak. Secret Key tidak valid.' }, 403)
+  }
+  
   await next()
 })
 
 app.post('/sync', async (c) => {
-  // Ambil daftar supplier dari database
-  const { results: suppliers } = await c.env.DB.prepare(`SELECT id, api_endpoint, credentials FROM suppliers`).all()
+  // Ambil daftar supplier yang aktif dari database
+  const { results: suppliers } = await c.env.DB.prepare(`SELECT id, api_endpoint, api_key, api_secret FROM providers WHERE status = 'active'`).all()
 
   let totalSynced = 0
 
   for (const supplier of suppliers) {
     try {
-      // Panggil API dari masing-masing supplier
+      // Logika untuk fetch data dari supplier luar
+      // Format fetch akan disesuaikan dengan dokumentasi masing-masing provider
       const response = await fetch(supplier.api_endpoint as string, {
-        headers: { 'Authorization': `Bearer ${supplier.credentials}` }
+        headers: { 
+          'Authorization': `Bearer ${supplier.api_key}`,
+          'Content-Type': 'application/json'
+        }
       })
+      
       const externalProducts = await response.json()
 
-      // Lakukan loop untuk update atau insert ke database lokal kita (D1)
+      // Lakukan loop untuk update atau insert ke database lokal (D1)
       for (const item of externalProducts.data) {
-        // Logika update harga/stok jika produk sudah ada, atau insert jika baru
+        // Contoh query UPSERT (Insert atau Update jika sudah ada)
         await c.env.DB.prepare(`
-          INSERT INTO products (supplier_id, name, stock_type, price, status) 
-          VALUES (?, ?, 'unique', ?, 'active')
-          ON CONFLICT(name) DO UPDATE SET price = ?
-        `).bind(supplier.id, item.name, item.price, item.price).run()
+          INSERT INTO products (provider_id, provider_product_code, category_id, name, stock_type, order_type, price, status) 
+          VALUES (?, ?, 1, ?, 'unique', 'prepaid', ?, 'active')
+          ON CONFLICT(provider_product_code) DO UPDATE SET price = ?
+        `).bind(supplier.id, item.sku_code, item.name, item.price, item.price).run()
+        
         totalSynced++
       }
     } catch (e) {
