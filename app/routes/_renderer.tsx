@@ -1,4 +1,6 @@
 import { jsxRenderer } from 'hono/jsx-renderer'
+// PERBAIKAN: Impor komponen Link dan Script dari honox
+import { Link, Script } from 'honox/server' 
 
 export default jsxRenderer(({ children, title }, c) => {
   const user = c.get('user')
@@ -12,14 +14,11 @@ export default jsxRenderer(({ children, title }, c) => {
         
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         
-        {/* CARA BARBAR: TAG HTML MURNI YANG TIDAK AKAN HILANG */}
-        <link rel="stylesheet" href="/style.css" />
+        {/* PERBAIKAN: Gunakan komponen Link dari HonoX */}
+        <Link href="/app/style.css" rel="stylesheet" />
         
-        {import.meta.env.PROD ? (
-           <script type="module" src="/static/client.js"></script>
-        ) : (
-           <script type="module" src="/app/client.ts"></script>
-        )}
+        {/* PERBAIKAN: Gunakan komponen Script dari HonoX, hapus pengecekan env manual */}
+        <Script src="/app/client.ts" async />
       </head>
       <body class="font-sans antialiased bg-slate-950 text-slate-100">
         <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
