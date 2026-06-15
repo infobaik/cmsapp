@@ -1,5 +1,4 @@
-// Asumsikan Anda menggunakan modul md5 ringan, misal: import md5 from 'md5'
-// Digiflazz mewajibkan format JSON dan header Content-Type yang sesuai
+import md5 from 'md5'
 
 interface DigiflazzCredentials {
   endpoint: string; // https://api.digiflazz.com/v1
@@ -7,7 +6,7 @@ interface DigiflazzCredentials {
   secret: string;   // production/development key
 }
 
-// 1. CEK SALDO (Gunakan string 'depo' untuk signature)
+// 1. CEK SALDO
 export async function checkDigiflazzBalance(cred: DigiflazzCredentials) {
   const sign = md5(cred.key + cred.secret + "depo");
   
@@ -27,7 +26,7 @@ export async function checkDigiflazzBalance(cred: DigiflazzCredentials) {
   
   return {
     success: true,
-    raw_response: rawData // Biarkan raw respon ditampilkan!
+    raw_response: rawData 
   };
 }
 
@@ -57,13 +56,13 @@ export async function processPrepaidDigiflazz(
   const rawData = await response.json();
 
   if (rawData.data?.status === 'Gagal') {
-     throw new Error(JSON.stringify(rawData)); // Kembalikan raw error
+     throw new Error(JSON.stringify(rawData)); 
   }
 
   return {
     success: true,
     sn: rawData.data?.sn || '',
-    raw_response: rawData // Raw JSON dipertahankan
+    raw_response: rawData 
   };
 }
 
