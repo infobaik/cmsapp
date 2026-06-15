@@ -11,33 +11,42 @@ app.use('/*', async (c, next) => {
   const sessionId = getCookie(c, 'session_id')
   if (!sessionId) return c.redirect('/login')
 
-  // Tarik data sesi dan pastikan belum kedaluwarsa
-  const user = await c.env.DB.prepare(`
-    SELECT u.id FROM sessions s
-    JOIN users u ON s.user_id = u.id
-    WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP
-  `).bind(sessionId).first()
+  try {
+    // Tarik data sesi dan pastikan belum kedaluwarsa
+    const user = await c.env.DB.prepare(`
+      SELECT u.id FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP
+    `).bind(sessionId).first()
 
-  if (!user) {
+    if (!user) {
+      return c.redirect('/login')
+    }
+
+    // Simpan user_id ke context agar bisa dipakai di route bawahnya
+    c.set('user_id', user.id)
+    
+    // KUNCI PERBAIKAN: Wajib "return" await next() agar Hono 
+    // dan Cloudflare Workers tidak memutus rantai Response-nya (menghindari TypeError)
+    return await next()
+    
+  } catch (error) {
+    console.error("Auth Middleware Error:", error)
     return c.redirect('/login')
   }
-
-  // Simpan user_id ke context agar bisa dipakai di route bawahnya
-  c.set('user_id', user.id)
-  await next()
 })
 
 // ========================================================================
 // ENDPOINT CREATE ORDER / TRANSAKSI PPOB
 // ========================================================================
 app.post('/order/create', async (c) => {
-  const userId = c.get('user_id')
-  const body = await c.req.parseBody()
-
-  const productId = parseInt(body.product_id as string)
-  const customerNumber = body.customer_number as string
-
   try {
+    const userId = c.get('user_id')
+    const body = await c.req.parseBody() // Dipindah ke dalam try-catch agar aman jika format body rusak
+
+    const productId = parseInt(body.product_id as string)
+    const customerNumber = body.customer_number as string
+
     // 1. Ambil data produk dan kredensial provider secara komprehensif
     const product = await c.env.DB.prepare(`
       SELECT p.*, pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret
@@ -145,6 +154,7 @@ app.post('/order/create', async (c) => {
     }
 
   } catch (systemError: any) {
+    // Dengan try-catch paling luar ini, Hono akan dijamin me-return sesuatu berupa Response meskipun script bermasalah
     console.error("Kesalahan Sistem Order:", systemError)
     return c.redirect('/user/dashboard?error=Terjadi+kesalahan+sistem')
   }
