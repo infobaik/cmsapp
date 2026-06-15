@@ -97,6 +97,44 @@ app.post('/categories/create', async (c) => {
   }
 })
 
+// UPDATE KATEGORI & UPLOAD ICON
+app.post('/categories/:id/update', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.parseBody({ all: true }) // Mendukung file upload
+  
+  const name = body.name as string
+  const slug = body.slug as string
+  const type = body.type as string
+  const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
+  
+  const iconFile = body.icon as File
+
+  try {
+    if (iconFile && iconFile.size > 0) {
+      // Jika ada file icon baru yang diupload
+      const imageUrl = await uploadToCloudinary(c.env.DB, iconFile)
+      
+      await c.env.DB.prepare(`
+        UPDATE categories 
+        SET name = ?, slug = ?, type = ?, parent_id = ?, image_url = ? 
+        WHERE id = ?
+      `).bind(name, slug, type, parentId, imageUrl, id).run()
+    } else {
+      // Jika hanya update teks saja
+      await c.env.DB.prepare(`
+        UPDATE categories 
+        SET name = ?, slug = ?, type = ?, parent_id = ? 
+        WHERE id = ?
+      `).bind(name, slug, type, parentId, id).run()
+    }
+
+    return c.redirect('/admin/categories')
+  } catch (error: any) {
+    console.error("Gagal update kategori:", error)
+    return c.redirect(`/admin/categories?error=${encodeURIComponent(error.message)}`)
+  }
+})
+
 // ========================================================================
 // 4. MANAJEMEN PRODUK (DENGAN UPLOAD GAMBAR KE CLOUDINARY)
 // ========================================================================
