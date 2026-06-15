@@ -33,7 +33,8 @@ app.post('/sync', async (c) => {
         provider_name: supplier.name,
         status: "Processing",
         synced_items: 0,
-        error: null as string | null
+        error: null as string | null,
+        raw_response: null as any // Tambahkan penampung raw response
       }
 
       try {
@@ -43,9 +44,13 @@ app.post('/sync', async (c) => {
            secret: supplier.api_secret as string
         }, 'prepaid')
 
+        // LANGSUNG MASUKKAN RAW RESPONSE KE LOG APAPUN ISINYA
+        supplierLog.raw_response = externalProducts
+
+        // Pengecekan tidak lagi menutupi data asli
         if (!externalProducts || !externalProducts.data || !Array.isArray(externalProducts.data)) {
            supplierLog.status = "Failed"
-           supplierLog.error = "Data produk dari Digiflazz kosong atau struktur JSON tidak valid."
+           supplierLog.error = "Data tidak dapat diproses. Silakan periksa raw_response."
            debugLogs.push(supplierLog)
            continue 
         }
@@ -69,15 +74,10 @@ app.post('/sync', async (c) => {
            )
         }
 
-        // AKSI CRITICAL: Jalankan batch d1 dan hitung total_synced HANYA jika sukses commit
         const chunkSize = 100
         for (let i = 0; i < batchStatements.length; i += chunkSize) {
            const chunk = batchStatements.slice(i, i + chunkSize)
-           
-           // Jika baris ini crash (misal akibat Foreign Key), ia langsung melompat ke blok catch bawah
            await c.env.DB.batch(chunk) 
-           
-           // Hanya bertambah jika database berhasil mengeksekusi chunk SQL tanpa error
            totalSynced += chunk.length 
            supplierLog.synced_items += chunk.length
         }
