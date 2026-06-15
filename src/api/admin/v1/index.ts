@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getCookie } from 'hono/cookie'
-import { uploadToCloudinary } from '../../services/cloudinary'
+import { uploadToCloudinary } from '../../../services/cloudinary'
 
 const app = new Hono()
 
