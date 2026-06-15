@@ -3,7 +3,7 @@ import publicApi from './api/public/v1'
 import adminApi from './api/admin/v1'
 import waApi from './api/wa/v1'
 import tgApi from './api/tg/v1'
-
+import userApi from './api/user/v1'
 // 1. Import modul Supplier (Untuk Sinkronisasi Cronjob)
 import supplierApi from './api/supplier/index' 
 
@@ -21,7 +21,7 @@ api.route('/api/tg/v1', tgApi)
 
 // Mount rute khusus admin
 api.route('/api/admin/v1', adminApi)
-
+api.route('/api/user/v1', userApi)
 // Mount rute API Sinkronisasi Supplier
 api.route('/api/supplier/v1', supplierApi)
 
