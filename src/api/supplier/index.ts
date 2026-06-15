@@ -32,9 +32,9 @@ app.post('/sync', async (c) => {
         provider_id: supplier.id,
         provider_name: supplier.name,
         status: "Processing",
+        categories_created: 0,
         synced_items: 0,
-        error: null as string | null,
-        raw_response: null as any // Tambahkan penampung raw response
+        error: null as string | null
       }
 
       try {
@@ -44,33 +44,91 @@ app.post('/sync', async (c) => {
            secret: supplier.api_secret as string
         }, 'prepaid')
 
-        // LANGSUNG MASUKKAN RAW RESPONSE KE LOG APAPUN ISINYA
-        supplierLog.raw_response = externalProducts
-
-        // Pengecekan tidak lagi menutupi data asli
         if (!externalProducts || !externalProducts.data || !Array.isArray(externalProducts.data)) {
            supplierLog.status = "Failed"
-           supplierLog.error = "Data tidak dapat diproses. Silakan periksa raw_response."
+           supplierLog.error = "Data produk dari Digiflazz kosong atau struktur JSON tidak valid."
            debugLogs.push(supplierLog)
            continue 
         }
 
+        // ==========================================
+        // 1. LOGIKA AUTO-MAP KATEGORI
+        // ==========================================
+        // Ambil daftar nama kategori unik dari response Digiflazz
+        const uniqueCategories = [...new Set(externalProducts.data.map((item: any) => item.category))]
+        
+        // Tarik data kategori lokal dari D1
+        const { results: existingCats } = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all()
+        
+        // Buat objek mapping: { "Pulsa": 1, "E-Money": 2 }
+        const categoryMap: Record<string, number> = {}
+        for (const cat of existingCats) {
+           categoryMap[cat.name as string] = cat.id as number
+        }
+
+        // Cari kategori Digiflazz yang belum terdaftar di D1
+        const missingCategories = uniqueCategories.filter(catName => !categoryMap[catName as string])
+
+        // Buat otomatis kategori yang tidak ada
+        if (missingCategories.length > 0) {
+           for (const catName of missingCategories) {
+               const nameStr = String(catName)
+               
+               // Buat slug otomatis (misal: "E-Money" -> "e-money", "Masa Aktif" -> "masa-aktif")
+               const slug = nameStr.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+               
+               try {
+                 // Insert dan langsung minta nilai 'id' yang baru terbuat menggunakan RETURNING
+                 const newCat = await c.env.DB.prepare(`
+                    INSERT INTO categories (name, slug, type) 
+                    VALUES (?, ?, 'product') 
+                    RETURNING id, name
+                 `).bind(nameStr, slug).first()
+                 
+                 if (newCat) {
+                    categoryMap[newCat.name as string] = newCat.id as number
+                    supplierLog.categories_created++
+                 }
+               } catch (catError) {
+                 // Fallback: Jika slug gagal karena bentrok dengan slug lain, tambahkan waktu acak
+                 const fallbackSlug = `${slug}-${Date.now()}`
+                 const newCat = await c.env.DB.prepare(`
+                    INSERT INTO categories (name, slug, type) 
+                    VALUES (?, ?, 'product') 
+                    RETURNING id, name
+                 `).bind(nameStr, fallbackSlug).first()
+                 
+                 if (newCat) {
+                    categoryMap[newCat.name as string] = newCat.id as number
+                    supplierLog.categories_created++
+                 }
+               }
+           }
+        }
+        // ==========================================
+
+
+        // 2. LOGIKA PENYIMPANAN PRODUK
         const stmt = c.env.DB.prepare(`
            INSERT INTO products (provider_id, provider_product_code, category_id, name, stock_type, order_type, price, status) 
-           VALUES (?, ?, 1, ?, 'general', 'prepaid', ?, ?)
+           VALUES (?, ?, ?, ?, 'general', 'prepaid', ?, ?)
            ON CONFLICT(provider_id, provider_product_code) DO UPDATE SET 
              price = excluded.price,
              status = excluded.status,
-             name = excluded.name
+             name = excluded.name,
+             category_id = excluded.category_id 
         `)
 
         const batchStatements = []
         for (const item of externalProducts.data) {
            const localStatus = (item.seller_product_status === true && item.buyer_product_status === true) ? 'active' : 'inactive'
            const sellingPrice = item.price + dynamicMargin
+           
+           // Ambil ID Kategori dari hasil pemetaan otomatis
+           const categoryId = categoryMap[item.category] || 1
 
            batchStatements.push(
-             stmt.bind(supplier.id, item.buyer_sku_code, item.product_name, sellingPrice, localStatus)
+             stmt.bind(supplier.id, item.buyer_sku_code, categoryId, item.product_name, sellingPrice, localStatus)
            )
         }
 
