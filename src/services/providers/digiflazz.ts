@@ -1,34 +1,164 @@
-export async function processDigiflazzOrder(
-  credentials: { endpoint: string, key: string, secret: string }, 
+// Asumsikan Anda menggunakan modul md5 ringan, misal: import md5 from 'md5'
+// Digiflazz mewajibkan format JSON dan header Content-Type yang sesuai
+
+interface DigiflazzCredentials {
+  endpoint: string; // https://api.digiflazz.com/v1
+  key: string;      // username
+  secret: string;   // production/development key
+}
+
+// 1. CEK SALDO (Gunakan string 'depo' untuk signature)
+export async function checkDigiflazzBalance(cred: DigiflazzCredentials) {
+  const sign = md5(cred.key + cred.secret + "depo");
+  
+  const payload = {
+    cmd: "deposit",
+    username: cred.key,
+    sign: sign
+  };
+
+  const response = await fetch(`${cred.endpoint}/cek-saldo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const rawData = await response.json();
+  
+  return {
+    success: true,
+    raw_response: rawData // Biarkan raw respon ditampilkan!
+  };
+}
+
+// 2. TRANSAKSI PRABAYAR (Pulsa, Game, e-Money)
+export async function processPrepaidDigiflazz(
+  cred: DigiflazzCredentials, 
   skuCode: string, 
   customerNumber: string, 
   trxId: string
 ) {
-  // Logic spesifik sesuai dokumentasi API Digiflazz
+  const sign = md5(cred.key + cred.secret + trxId);
+
   const payload = {
-    username: credentials.key,
+    username: cred.key,
     buyer_sku_code: skuCode,
     customer_no: customerNumber,
     ref_id: trxId,
-    // (signature hash di-generate di sini...)
-  }
+    sign: sign
+  };
 
-  const response = await fetch(credentials.endpoint, {
+  const response = await fetch(`${cred.endpoint}/transaction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  })
+  });
 
-  const data = await response.json()
+  const rawData = await response.json();
 
-  // Parsing response yang berbeda-beda agar seragam saat dikembalikan ke transaction.ts
-  if (data.data.status === 'Gagal') {
-     throw new Error(data.data.message)
+  if (rawData.data?.status === 'Gagal') {
+     throw new Error(JSON.stringify(rawData)); // Kembalikan raw error
   }
 
   return {
     success: true,
-    sn: data.data.sn,
-    raw_response: data
+    sn: rawData.data?.sn || '',
+    raw_response: rawData // Raw JSON dipertahankan
+  };
+}
+
+// 3. PASCABAYAR: INQUIRY (Cek Tagihan)
+export async function inquiryPostpaidDigiflazz(
+  cred: DigiflazzCredentials, 
+  skuCode: string, 
+  customerNumber: string, 
+  trxId: string
+) {
+  const sign = md5(cred.key + cred.secret + trxId);
+
+  const payload = {
+    commands: "inq-pasca",
+    username: cred.key,
+    buyer_sku_code: skuCode,
+    customer_no: customerNumber,
+    ref_id: trxId,
+    sign: sign
+  };
+
+  const response = await fetch(`${cred.endpoint}/transaction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const rawData = await response.json();
+
+  if (rawData.data?.status === 'Gagal') {
+     throw new Error(JSON.stringify(rawData));
   }
+
+  return {
+    success: true,
+    customer_name: rawData.data?.customer_name,
+    bill_amount: rawData.data?.price, 
+    raw_response: rawData
+  };
+}
+
+// 4. PASCABAYAR: PAYMENT (Bayar Tagihan)
+export async function payPostpaidDigiflazz(
+  cred: DigiflazzCredentials, 
+  skuCode: string, 
+  customerNumber: string, 
+  trxId: string
+) {
+  const sign = md5(cred.key + cred.secret + trxId);
+
+  const payload = {
+    commands: "pay-pasca",
+    username: cred.key,
+    buyer_sku_code: skuCode,
+    customer_no: customerNumber,
+    ref_id: trxId,
+    sign: sign
+  };
+
+  const response = await fetch(`${cred.endpoint}/transaction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const rawData = await response.json();
+
+  if (rawData.data?.status === 'Gagal') {
+     throw new Error(JSON.stringify(rawData));
+  }
+
+  return {
+    success: true,
+    sn: rawData.data?.sn,
+    raw_response: rawData
+  };
+}
+
+// 5. PULL PRICE LIST (Untuk Sinkronisasi)
+export async function getDigiflazzPriceList(cred: DigiflazzCredentials, type: 'prepaid' | 'pasca') {
+  const sign = md5(cred.key + cred.secret + "pricelist");
+  
+  const payload = {
+    cmd: type,
+    username: cred.key,
+    sign: sign
+  };
+
+  const response = await fetch(`${cred.endpoint}/price-list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const rawData = await response.json();
+  
+  return rawData;
 }
