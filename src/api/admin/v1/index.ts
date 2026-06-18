@@ -33,25 +33,18 @@ app.post('/settings/update', async (c) => {
   }
 })
 
-// ====================================================================
-// PERBAIKAN MUTLAK: GUNAKAN UPSERT AGAR KREDENSIAL BISA OTOMATIS DIBUAT
-// ====================================================================
 app.post('/system/update', async (c) => {
   const body = await c.req.parseBody()
   try {
-    // Memanfaatkan fasilitas ON CONFLICT milik D1 (SQLite)
     const stmt = c.env.DB.prepare(`
       INSERT INTO system_settings (key, value) 
       VALUES (?, ?) 
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `)
     const batch = []
-    
-    // Looping data input dari Form Settings
     for (const [key, value] of Object.entries(body)) {
         batch.push(stmt.bind(key, value as string)) 
     }
-    
     if (batch.length > 0) await c.env.DB.batch(batch)
     return c.redirect('/admin/settings?success=system_updated')
   } catch (error) {
@@ -237,6 +230,9 @@ app.post('/gateways/create', async (c) => {
   }
 })
 
+// ========================================================================
+// REVISI MESIN SYNC (KEBAL TIMEOUT: BATCHING & MEMORY MAPPING)
+// ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
     const body = await c.req.parseBody();
@@ -245,38 +241,65 @@ app.post('/products/sync-okeconnect', async (c) => {
     const defaultMargin = Number(body.profit_margin || 0);
 
     const response = await fetch(jsonUrl);
-    if (!response.ok) throw new Error("Gagal mengambil data dari Server OkeConnect");
+    if (!response.ok) throw new Error("Gagal mengambil data JSON");
     
     const result = await response.json();
     const items = Array.isArray(result) ? result : (result.data || []);
     if (!items || items.length === 0) return c.redirect('/admin/products?error=Data+JSON+Kosong');
 
-    const { results: dbCats } = await c.env.DB.prepare(`SELECT id, parent_id, name FROM categories WHERE type = 'product'`).all();
-    const catNameToId = new Map(dbCats.map((c: any) => [c.name.toLowerCase(), c.id]));
+    // 1. Tarik DB Kategori dan jadikan Map di Memory
+    let dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
+    let catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
 
+    // 2. Batch Kategori Induk (Agar tidak nabrak subrequest limit)
     const uniqueParents = [...new Set(items.map((i: any) => i.kategori || 'Lainnya'))];
-    for (const parentName of uniqueParents) {
-      const lowerParent = String(parentName).toLowerCase();
+    let parentStatements = [];
+    for (const parent of uniqueParents) {
+      const lowerParent = String(parent).toLowerCase();
       if (!catNameToId.has(lowerParent)) {
          const slug = lowerParent.replace(/[^a-z0-9]+/g, '-');
-         const res = await c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (NULL, ?, ?, 'product') RETURNING id`).bind(parentName, slug).first();
-         if (res && res.id) catNameToId.set(lowerParent, res.id as number);
+         parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (NULL, ?, ?, 'product')`).bind(parent, slug));
+         catNameToId.set(lowerParent, -1); // Tandai sedang diproses
       }
     }
+    
+    // Eksekusi Induk (Max 100 per proses D1)
+    for (let i = 0; i < parentStatements.length; i += 100) {
+      await c.env.DB.batch(parentStatements.slice(i, i + 100));
+    }
 
+    // Refresh Memory Map setelah Induk masuk
+    if (parentStatements.length > 0) {
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
+      catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
+    }
+
+    // 3. Batch Kategori Anak / Brand
     const uniqueBrands = [...new Set(items.map((i: any) => JSON.stringify({ parent: i.kategori || 'Lainnya', brand: i.produk || 'Umum' })))];
+    let brandStatements = [];
     for (const brandStr of uniqueBrands) {
       const { parent, brand } = JSON.parse(brandStr as string);
       const lowerBrand = String(brand).toLowerCase();
-      
       if (!catNameToId.has(lowerBrand)) {
          const parentId = catNameToId.get(String(parent).toLowerCase());
          const slug = lowerBrand.replace(/[^a-z0-9]+/g, '-');
-         const res = await c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (?, ?, ?, 'product') RETURNING id`).bind(parentId, brand, slug).first();
-         if (res && res.id) catNameToId.set(lowerBrand, res.id as number);
+         brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (?, ?, ?, 'product')`).bind(parentId, brand, slug));
+         catNameToId.set(lowerBrand, -1);
       }
     }
 
+    // Eksekusi Anak/Brand
+    for (let i = 0; i < brandStatements.length; i += 100) {
+      await c.env.DB.batch(brandStatements.slice(i, i + 100));
+    }
+
+    // Refresh Memory Map Terakhir
+    if (brandStatements.length > 0) {
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
+      catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
+    }
+
+    // 4. Proses 3.000+ Produk (Sangat Ringan, 100 per chunk)
     const { results: existingProducts } = await c.env.DB.prepare(`SELECT provider_product_code FROM products WHERE provider_id = ?`).bind(providerId).all();
     const existingCodeMap = new Set(existingProducts.map((p: any) => p.provider_product_code));
 
@@ -294,8 +317,8 @@ app.post('/products/sync-okeconnect', async (c) => {
 
       const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0 || pName.toLowerCase().includes('bayar tagihan');
       const oType = isPostpaid ? 'postpaid' : 'prepaid';
-
       const pStatus = (item.status?.toLowerCase() === 'normal' || item.status === '1' || item.status === 'active') ? 'active' : 'inactive';
+      
       const brandId = catNameToId.get(String(item.produk || 'Umum').toLowerCase());
 
       if (existingCodeMap.has(pCode)) {
@@ -305,10 +328,9 @@ app.post('/products/sync-okeconnect', async (c) => {
       }
     }
 
-    const chunkSize = 50;
-    for (let i = 0; i < statements.length; i += chunkSize) {
-      const chunk = statements.slice(i, i + chunkSize);
-      await c.env.DB.batch(chunk);
+    // Eksekusi Puncak! (Hanya butuh 30x hit database untuk 3000 produk)
+    for (let i = 0; i < statements.length; i += 100) {
+      await c.env.DB.batch(statements.slice(i, i + 100));
     }
 
     return c.redirect(`/admin/products?success=Berhasil+sinkronisasi+dan+pemetaan+${statements.length}+produk`);
