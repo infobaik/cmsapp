@@ -23,23 +23,19 @@ export const safeProviderFetch = async (
     let requestBody: any;
 
     if (creds.proxy_url) {
-        // Jika pakai Proxy, tembak ke URL Proxy
         fetchUrl = creds.proxy_url;
         headers['x-relay-auth'] = 'BantarCaringin1'; 
         
-        // BUNGKUS PAYLOAD UNTUK PROXY
         requestBody = JSON.stringify({
             target_url: customTargetUrl || creds.endpoint,
-            target_method: method, // TETAPKAN GET! (Jangan diubah paksa ke POST)
+            target_method: method,
             target_headers: {
                 'Accept': 'application/json, text/plain, */*',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            // PERBAIKAN FATAL: Jika method GET, payload WAJIB null (Sama seperti tes PHP)
             target_payload: method === 'GET' ? null : payload 
         });
     } else {
-        // Jika tidak pakai proxy (Walaupun seharusnya pakai)
         requestBody = method === 'GET' ? undefined : (typeof payload === 'string' ? payload : JSON.stringify(payload));
     }
 
@@ -51,7 +47,7 @@ export const safeProviderFetch = async (
 
     try {
         const response = await fetch(fetchUrl, {
-            method: creds.proxy_url ? 'POST' : method, // Perintah ke render proxy-nya sendiri selalu POST
+            method: creds.proxy_url ? 'POST' : method,
             headers,
             body: requestBody
         });
@@ -81,7 +77,10 @@ export const safeProviderFetch = async (
             }
         }
         
-        return { raw_response: data };
+        return { 
+            raw_response: data,
+            server_log: textResponse 
+        };
         
     } catch (error: any) {
         console.error("\n[DEBUG] XXXXXX PROVIDER FETCH ERROR XXXXXX");
