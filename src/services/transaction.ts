@@ -35,7 +35,8 @@ export async function processPrepaidOrder(
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
   if (product.order_type !== 'prepaid') throw new Error('INVALID_ORDER_TYPE')
 
-  const trxId = crypto.randomUUID()
+  // PERBAIKAN: Format ID Transaksi baru (PAS-UserID-Timestamp)
+  const trxId = `PAS-${userId}-${Date.now()}`
   const totalPrice = product.price as number
 
   const insertTrx = `
@@ -95,7 +96,8 @@ export async function createPostpaidInquiry(
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
   if (product.order_type !== 'inquiry') throw new Error('INVALID_ORDER_TYPE')
 
-  const trxId = crypto.randomUUID()
+  // PERBAIKAN: Format ID Transaksi baru (PAS-UserID-Timestamp)
+  const trxId = `PAS-${userId}-${Date.now()}`
 
   const inquiryResult = await dispatchProviderOrder(
     product.provider_name as string,
@@ -131,7 +133,6 @@ export async function createPostpaidInquiry(
     siblingPostpaid = postpaids.find((p: any) => (p.name as string).toLowerCase() === expectedName)
   }
 
-  // LOGIKA AMAN: Pengecekan Akun Standalone (E-Wallet / Game)
   if (!siblingPostpaid) {
     if (billAmount === 0 || inqCode.startsWith('CEK') || inqCode.startsWith('INQ')) {
        const insertTrx = `
