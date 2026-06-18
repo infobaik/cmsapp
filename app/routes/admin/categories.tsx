@@ -20,7 +20,6 @@ export default createRoute(async (c) => {
         <div class="lg:col-span-1 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl h-fit">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Tambah Baru</h2>
           
-          {/* PERBAIKAN: Tambah enctype multipart/form-data untuk upload gambar */}
           <form method="POST" action="/api/admin/v1/categories/create" enctype="multipart/form-data" class="space-y-4">
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nama Kategori / Brand</label>
@@ -64,18 +63,26 @@ export default createRoute(async (c) => {
           <div class="space-y-4">
             {parents.map((parent: any) => (
               <div class="bg-[#121217] border border-slate-800/60 rounded-xl p-4">
-                <div class="flex items-center gap-3 mb-3">
-                  {parent.image_url ? (
-                     <img src={parent.image_url} alt={parent.name} class="w-8 h-8 rounded bg-white object-contain p-1" />
-                  ) : (
-                     <div class="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
-                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                     </div>
-                  )}
-                  <div>
-                    <span class="font-bold text-slate-200 block">{parent.name}</span>
-                    <span class="text-[10px] text-slate-500 uppercase tracking-wider">{parent.type}</span>
+                
+                {/* HEADER KATEGORI INDUK DENGAN TOMBOL EDIT */}
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-3">
+                    {parent.image_url ? (
+                       <img src={parent.image_url} alt={parent.name} class="w-8 h-8 rounded bg-white object-contain p-1" />
+                    ) : (
+                       <div class="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
+                          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                       </div>
+                    )}
+                    <div>
+                      <span class="font-bold text-slate-200 block">{parent.name}</span>
+                      <span class="text-[10px] text-slate-500 uppercase tracking-wider">{parent.type}</span>
+                    </div>
                   </div>
+                  {/* TOMBOL EDIT KATEGORI INDUK */}
+                  <a href={`/admin/categories/${parent.id}`} class="text-xs bg-slate-800 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-all">
+                    Edit
+                  </a>
                 </div>
                 
                 {categories.filter((child: any) => child.parent_id === parent.id).length > 0 && (
@@ -83,13 +90,19 @@ export default createRoute(async (c) => {
                     {categories
                       .filter((child: any) => child.parent_id === parent.id)
                       .map((child: any) => (
-                        <li class="flex items-center gap-3 text-sm text-slate-300">
-                           {child.image_url ? (
-                              <img src={child.image_url} alt={child.name} class="w-6 h-6 rounded bg-white object-contain p-0.5" />
-                           ) : (
-                              <div class="w-6 h-6 rounded border border-slate-700 bg-slate-800/50"></div>
-                           )}
-                           <span>{child.name}</span>
+                        <li class="flex items-center justify-between text-sm text-slate-300 group">
+                           <div class="flex items-center gap-3">
+                             {child.image_url ? (
+                                <img src={child.image_url} alt={child.name} class="w-6 h-6 rounded bg-white object-contain p-0.5" />
+                             ) : (
+                                <div class="w-6 h-6 rounded border border-slate-700 bg-slate-800/50"></div>
+                             )}
+                             <span>{child.name}</span>
+                           </div>
+                           {/* TOMBOL EDIT BRAND/SUB-KATEGORI */}
+                           <a href={`/admin/categories/${child.id}`} class="text-[11px] font-semibold text-blue-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all bg-blue-500/10 px-2 py-1 rounded">
+                             Edit Brand
+                           </a>
                         </li>
                       ))}
                   </ul>
