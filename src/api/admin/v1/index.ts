@@ -325,16 +325,19 @@ app.post('/products/sync-okeconnect', async (c) => {
       if (basePrice === 0 || pCode.toUpperCase().startsWith('INQ')) {
         // Produk Cek Tagihan
         oType = 'inquiry';
-        finalSellPrice = 0;
+        finalSellPrice = 0; // Cek tagihan selalu murni Rp 0
         isVis = 1;
       } else if (basePrice < 0 || pCode.toUpperCase().startsWith('PAY')) {
-        // Produk Eksekusi Bayar Tagihan
+        // Produk Eksekusi Bayar Tagihan (POSTPAID)
         oType = 'postpaid';
-        finalSellPrice = basePrice; 
+        // PERBAIKAN: Rumus ajaib Anda diterapkan di sini! 
+        // Contoh: -3000 (Komisi Asli) + 500 (Margin) = -2500 (Komisi untuk User)
+        finalSellPrice = basePrice + defaultMargin; 
         isVis = 0; // Sembunyikan dari katalog!
       } else {
         // Produk Prabayar Umum (Pulsa, Game, Data)
         oType = 'prepaid';
+        // Contoh: 10000 (Harga Asli) + 500 (Margin) = 10500 (Harga User)
         finalSellPrice = basePrice + defaultMargin;
         isVis = 1;
       }
