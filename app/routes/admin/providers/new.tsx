@@ -20,9 +20,15 @@ export default createRoute(async (c) => {
               <input type="text" name="name" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none" />
             </div>
             
-            <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-500 mb-2">URL Endpoint API Lengkap</label>
+            <div class="md:col-span-2 border-b border-slate-800/60 pb-6">
+              <label class="block text-xs font-semibold text-slate-500 mb-2">URL Endpoint API Asli</label>
               <input type="url" name="api_endpoint" required placeholder="https://api.digiflazz.com/v1/transaction" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono text-sm" />
+            </div>
+
+            <div class="md:col-span-2 p-5 border border-blue-500/20 bg-blue-500/5 rounded-xl">
+              <label class="block text-xs font-semibold text-blue-400 mb-2">Proxy Forwarder URL (Opsional)</label>
+              <input type="url" name="proxy_url" placeholder="https://domain-anda.com/proxy.php" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono text-sm" />
+              <p class="text-[11px] text-slate-400 mt-2">Isi kolom ini HANYA JIKA provider mewajibkan Whitelist IP Statis. Biarkan kosong jika provider menerima IP dinamis Cloudflare.</p>
             </div>
 
             <div>
