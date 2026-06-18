@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import publicApi from './api/public/v1/index'
 import userApi from './api/user/v1/index'
 import adminApi from './api/admin/v1/index'
+import webhookOkeConnect from './api/webhook/okeconnect'
 
 // Jika Anda sudah membuat file webhook atau wa, bisa di-uncomment nanti:
 // import webhookApi from './api/webhook/digiflazz'
@@ -15,7 +16,7 @@ const app = new Hono()
 app.route('/api/public/v1', publicApi)
 app.route('/api/user/v1', userApi)
 app.route('/api/admin/v1', adminApi)
-
+app.route('/api/webhook/okeconnect', webhookOkeConnect)
 // app.route('/api/webhook', webhookApi)
 // app.route('/api/wa/v1', waApi)
 
