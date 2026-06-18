@@ -88,6 +88,44 @@ app.post('/categories/create', async (c) => {
   }
 })
 
+// BARU: ENDPOINT EDIT KATEGORI UNTUK MENGGANTI GAMBAR
+app.post('/categories/:id/update', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.parseBody({ all: true })
+  
+  const name = body.name as string
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const type = body.type as string
+  const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
+  
+  const imageFile = body.image as File
+
+  try {
+    if (imageFile && imageFile.size > 0) {
+      // Jika Admin Mengunggah Gambar Baru
+      const imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
+      
+      await c.env.DB.prepare(`
+        UPDATE categories 
+        SET parent_id = ?, name = ?, slug = ?, type = ?, image_url = ? 
+        WHERE id = ?
+      `).bind(parentId, name, slug, type, imageUrl, id).run()
+    } else {
+      // Jika Admin Membiarkan Gambar Kosong (Hanya Update Teks)
+      await c.env.DB.prepare(`
+        UPDATE categories 
+        SET parent_id = ?, name = ?, slug = ?, type = ? 
+        WHERE id = ?
+      `).bind(parentId, name, slug, type, id).run()
+    }
+    
+    return c.redirect(`/admin/categories/${id}?success=true`)
+  } catch (error: any) {
+    console.error("Gagal update kategori:", error)
+    return c.redirect(`/admin/categories/${id}?error=failed`)
+  }
+})
+
 // ========================================================================
 // 4. MANAJEMEN PRODUK 
 // ========================================================================
