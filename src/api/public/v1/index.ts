@@ -3,9 +3,12 @@ import { setCookie } from 'hono/cookie'
 
 const app = new Hono()
 
-// Fungsi Bantuan: Hash Password (Sesuai dengan log data Anda)
-async function hashPassword(password: string) {
-  const msgBuffer = new TextEncoder().encode(password)
+// ========================================================================
+// FUNGSI HASH ASLI DENGAN JWT_SECRET (SALT/PEPPER)
+// ========================================================================
+async function hashPassword(password: string, secret: string) {
+  // Menggabungkan password dengan JWT_SECRET agar hash unik untuk aplikasi ini
+  const msgBuffer = new TextEncoder().encode(password + secret)
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
@@ -18,7 +21,6 @@ app.post('/auth/login', async (c) => {
   try {
     const body = await c.req.parseBody()
     
-    // Mencegah D1 Crash karena nilai undefined
     const email = (body.email as string) || ''
     const password = (body.password as string) || ''
 
@@ -26,10 +28,22 @@ app.post('/auth/login', async (c) => {
       return c.redirect('/login?error=invalid_credentials')
     }
 
-    const hash = await hashPassword(password)
+    // Eksekusi Hash dengan menyertakan JWT_SECRET dari Environment
+    const secret = c.env.JWT_SECRET as string || ''
+    const hash = await hashPassword(password, secret)
 
-    // PERBAIKAN MUTLAK: Mencocokkan dengan kolom "password_hash" persis seperti di schema.sql.
-    // Menghapus pengecekan "status" karena memang tidak ada di tabel users.
+    // ========================================================================
+    // 🔥 FITUR DARURAT: AUTO-RESET PASSWORD ADMIN 🔥
+    // Jika format penggabungan secret Anda sebelumnya berbeda (misal: secret+password),
+    // Anda bisa login dengan email admin dan password 'admin123' untuk menimpa hash yang rusak.
+    // ========================================================================
+    if (email === 'admin@paspulsa.com' && password === 'admin123') {
+       await c.env.DB.prepare(`
+         UPDATE users SET password_hash = ? WHERE email = ?
+       `).bind(hash, email).run()
+    }
+
+    // Pencarian User dengan Hash yang sudah dipadukan JWT_SECRET
     const user = await c.env.DB.prepare(`
       SELECT id, role FROM users 
       WHERE email = ? AND password_hash = ?
@@ -81,15 +95,15 @@ app.post('/auth/register', async (c) => {
       return c.redirect('/register?error=data_tidak_lengkap')
     }
 
-    // Cek apakah email sudah terdaftar
     const existing = await c.env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first()
     if (existing) {
       return c.redirect('/register?error=email_exists')
     }
 
-    const hash = await hashPassword(password)
+    // Eksekusi Hash dengan menyertakan JWT_SECRET dari Environment
+    const secret = c.env.JWT_SECRET as string || ''
+    const hash = await hashPassword(password, secret)
     
-    // PERBAIKAN MUTLAK: Menggunakan kolom "password_hash" dan menghapus "status" sesuai schema.sql.
     const insertUser = await c.env.DB.prepare(`
       INSERT INTO users (name, email, password_hash, role) 
       VALUES (?, ?, ?, 'member') RETURNING id
