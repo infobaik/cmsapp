@@ -56,7 +56,6 @@ app.post('/categories/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
   const slug = body.slug as string || name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const type = body.type as string
   const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
   
   const imageFile = body.image as File
@@ -66,10 +65,11 @@ app.post('/categories/create', async (c) => {
     if (imageFile && imageFile.size > 0) {
       imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
     }
+    // PERBAIKAN: Menghapus kolom 'type' dari query INSERT
     await c.env.DB.prepare(`
-      INSERT INTO categories (parent_id, name, slug, type, image_url) 
-      VALUES (?, ?, ?, ?, ?)
-    `).bind(parentId, name, slug, type, imageUrl).run()
+      INSERT INTO categories (parent_id, name, slug, image_url) 
+      VALUES (?, ?, ?, ?)
+    `).bind(parentId, name, slug, imageUrl).run()
     return c.redirect('/admin/categories?success=true')
   } catch (error) {
     return c.redirect('/admin/categories?error=failed')
@@ -82,7 +82,6 @@ app.post('/categories/:id/update', async (c) => {
   
   const name = body.name as string
   const slug = body.slug as string || name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const type = body.type as string
   const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
   
   const imageFile = body.image as File
@@ -90,24 +89,25 @@ app.post('/categories/:id/update', async (c) => {
   try {
     if (imageFile && imageFile.size > 0) {
       const imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
+      // PERBAIKAN: Menghapus kolom 'type' dari query UPDATE dengan gambar
       await c.env.DB.prepare(`
         UPDATE categories 
-        SET parent_id = ?, name = ?, slug = ?, type = ?, image_url = ? 
+        SET parent_id = ?, name = ?, slug = ?, image_url = ? 
         WHERE id = ?
-      `).bind(parentId, name, slug, type, imageUrl, id).run()
+      `).bind(parentId, name, slug, imageUrl, id).run()
     } else {
+      // PERBAIKAN: Menghapus kolom 'type' dari query UPDATE tanpa gambar
       await c.env.DB.prepare(`
         UPDATE categories 
-        SET parent_id = ?, name = ?, slug = ?, type = ? 
+        SET parent_id = ?, name = ?, slug = ? 
         WHERE id = ?
-      `).bind(parentId, name, slug, type, id).run()
+      `).bind(parentId, name, slug, id).run()
     }
     return c.redirect(`/admin/categories?success=updated`)
   } catch (error: any) {
     return c.redirect(`/admin/categories/${id}?error=failed`)
   }
 })
-
 app.post('/products/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
