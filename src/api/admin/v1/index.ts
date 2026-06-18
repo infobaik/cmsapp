@@ -231,7 +231,7 @@ app.post('/gateways/create', async (c) => {
 })
 
 // ========================================================================
-// REVISI MESIN SYNC (KEBAL TIMEOUT: BATCHING & MEMORY MAPPING)
+// MESIN SYNC "KEBAL ERROR" DENGAN UPSERT (ANTI-UNIQUE CONSTRAINT)
 // ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
@@ -247,96 +247,96 @@ app.post('/products/sync-okeconnect', async (c) => {
     const items = Array.isArray(result) ? result : (result.data || []);
     if (!items || items.length === 0) return c.redirect('/admin/products?error=Data+JSON+Kosong');
 
-    // 1. Tarik DB Kategori dan jadikan Map di Memory
-    let dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
-    let catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
+    let dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+    let slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
 
-    // 2. Batch Kategori Induk (Agar tidak nabrak subrequest limit)
+    // 1. Eksekusi Kategori Induk Aman
     const uniqueParents = [...new Set(items.map((i: any) => i.kategori || 'Lainnya'))];
     let parentStatements = [];
     for (const parent of uniqueParents) {
-      const lowerParent = String(parent).toLowerCase();
-      if (!catNameToId.has(lowerParent)) {
-         const slug = lowerParent.replace(/[^a-z0-9]+/g, '-');
-         parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (NULL, ?, ?, 'product')`).bind(parent, slug));
-         catNameToId.set(lowerParent, -1); // Tandai sedang diproses
+      const slug = String(parent).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      if (!slugToId.has(slug)) {
+         parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (NULL, ?, ?, 'product') ON CONFLICT(slug) DO NOTHING`).bind(parent, slug));
+         slugToId.set(slug, -1); 
       }
     }
-    
-    // Eksekusi Induk (Max 100 per proses D1)
-    for (let i = 0; i < parentStatements.length; i += 100) {
-      await c.env.DB.batch(parentStatements.slice(i, i + 100));
+    for (let i = 0; i < parentStatements.length; i += 50) {
+      await c.env.DB.batch(parentStatements.slice(i, i + 50));
     }
 
-    // Refresh Memory Map setelah Induk masuk
     if (parentStatements.length > 0) {
-      dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
-      catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+      slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
     }
 
-    // 3. Batch Kategori Anak / Brand
+    // 2. Eksekusi Brand/Sub-Kategori Aman
     const uniqueBrands = [...new Set(items.map((i: any) => JSON.stringify({ parent: i.kategori || 'Lainnya', brand: i.produk || 'Umum' })))];
     let brandStatements = [];
     for (const brandStr of uniqueBrands) {
       const { parent, brand } = JSON.parse(brandStr as string);
-      const lowerBrand = String(brand).toLowerCase();
-      if (!catNameToId.has(lowerBrand)) {
-         const parentId = catNameToId.get(String(parent).toLowerCase());
-         const slug = lowerBrand.replace(/[^a-z0-9]+/g, '-');
-         brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (?, ?, ?, 'product')`).bind(parentId, brand, slug));
-         catNameToId.set(lowerBrand, -1);
+      const parentSlug = String(parent).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const brandSlug = String(brand).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      
+      if (!slugToId.has(brandSlug)) {
+         const parentId = slugToId.get(parentSlug);
+         brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (?, ?, ?, 'product') ON CONFLICT(slug) DO NOTHING`).bind(parentId, brand, brandSlug));
+         slugToId.set(brandSlug, -1);
       }
     }
-
-    // Eksekusi Anak/Brand
-    for (let i = 0; i < brandStatements.length; i += 100) {
-      await c.env.DB.batch(brandStatements.slice(i, i + 100));
+    for (let i = 0; i < brandStatements.length; i += 50) {
+      await c.env.DB.batch(brandStatements.slice(i, i + 50));
     }
 
-    // Refresh Memory Map Terakhir
     if (brandStatements.length > 0) {
-      dbCatsResult = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product'`).all();
-      catNameToId = new Map(dbCatsResult.results.map((c: any) => [c.name.toLowerCase(), c.id]));
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+      slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
     }
 
-    // 4. Proses 3.000+ Produk (Sangat Ringan, 100 per chunk)
-    const { results: existingProducts } = await c.env.DB.prepare(`SELECT provider_product_code FROM products WHERE provider_id = ?`).bind(providerId).all();
-    const existingCodeMap = new Set(existingProducts.map((p: any) => p.provider_product_code));
+    // 3. EKSEKUSI PRODUK: UPSERT KUNCI GANDA MUTLAK
+    // Jika kode belum ada -> Insert Baru. Jika kode sudah ada -> Update Data Lama.
+    const upsertStmt = `
+      INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, status) 
+      VALUES (?, ?, ?, ?, 'general', ?, ?, ?)
+      ON CONFLICT(provider_id, provider_product_code) DO UPDATE SET 
+        price = excluded.price, 
+        status = excluded.status, 
+        name = excluded.name, 
+        order_type = excluded.order_type
+    `;
 
     const statements = [];
-    const updateStmt = `UPDATE products SET price = ?, status = ?, name = ?, category_id = ?, order_type = ? WHERE provider_id = ? AND provider_product_code = ?`;
-    const insertStmt = `INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, status) VALUES (?, ?, ?, ?, 'general', ?, ?, ?)`;
-
     for (const item of items) {
       const pCode = item.kode;
       const pName = item.keterangan || item.produk || item.nama || pCode;
       const basePrice = Number(item.harga);
       
-      const isCekInquiry = basePrice === 0 || pCode.toUpperCase().startsWith('INQ') || pName.toLowerCase().includes('cek ');
-      const finalSellPrice = isCekInquiry ? 0 : (basePrice + defaultMargin);
-
-      const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0 || pName.toLowerCase().includes('bayar tagihan');
-      const oType = isPostpaid ? 'postpaid' : 'prepaid';
-      const pStatus = (item.status?.toLowerCase() === 'normal' || item.status === '1' || item.status === 'active') ? 'active' : 'inactive';
+      // LOGIKA PEMISAHAN PREPAID/POSTPAID & INQUIRY
+      // 1. Inquiry: Harga 0 atau prefix INQ
+      const isCekInquiry = basePrice === 0 || pCode.toUpperCase().startsWith('INQ');
       
-      const brandId = catNameToId.get(String(item.produk || 'Umum').toLowerCase());
+      // 2. Postpaid: Prefix PAY atau harga minus (komisi)
+      const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0;
+      
+      const oType = isPostpaid ? 'postpaid' : 'prepaid';
+      const finalSellPrice = isCekInquiry ? 0 : (basePrice + defaultMargin);
+      const pStatus = (item.status === '1' || item.status === 'normal') ? 'active' : 'inactive';
+      
+      // Ambil ID Brand dari Map
+      const brandSlug = String(item.produk || 'Umum').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const brandId = slugToId.get(brandSlug);
 
-      if (existingCodeMap.has(pCode)) {
-         statements.push(c.env.DB.prepare(updateStmt).bind(finalSellPrice, pStatus, pName, brandId, oType, providerId, pCode));
-      } else {
-         statements.push(c.env.DB.prepare(insertStmt).bind(brandId, providerId, pCode, pName, oType, finalSellPrice, pStatus));
-      }
+      statements.push(c.env.DB.prepare(upsertStmt).bind(
+          brandId, providerId, pCode, pName, oType, finalSellPrice, pStatus
+      ));
     }
 
-    // Eksekusi Puncak! (Hanya butuh 30x hit database untuk 3000 produk)
-    for (let i = 0; i < statements.length; i += 100) {
-      await c.env.DB.batch(statements.slice(i, i + 100));
+    for (let i = 0; i < statements.length; i += 50) {
+      await c.env.DB.batch(statements.slice(i, i + 50));
     }
 
-    return c.redirect(`/admin/products?success=Berhasil+sinkronisasi+dan+pemetaan+${statements.length}+produk`);
+    return c.redirect(`/admin/products?success=Sinkronisasi+Sukses+${statements.length}+Produk`);
   } catch (error: any) {
     return c.redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
   }
 })
-
 export default app
