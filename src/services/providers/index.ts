@@ -16,15 +16,10 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
         'Content-Type': 'application/json'
     };
 
-    // JIKA MENGGUNAKAN PROXY, KITA BUNGKUS PAYLOAD SESUAI SKEMA EXPRESS.JS ANDA
     if (creds.proxy_url) {
         fetchUrl = creds.proxy_url;
-        
-        // 1. Masukkan otentikasi wajib proxy Anda
-        // Idealnya diambil dari env, tapi kita hardcode fallback sesuai proxy Anda
         headers['x-relay-auth'] = 'BantarCaringin1'; 
-
-        // 2. Bungkus payload sesuai dengan ekspektasi req.body di server proxy
+        
         finalPayload = {
             target_url: creds.endpoint,
             target_method: 'POST',
@@ -35,6 +30,15 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
         };
     }
 
+    // ==========================================
+    // 🔍 DEBUG 1: LOG REQUEST (YANG DIKIRIM)
+    // ==========================================
+    console.log("\n[DEBUG] ====== OUTGOING REQUEST TO PROVIDER ======");
+    console.log("[DEBUG] Fetch URL :", fetchUrl);
+    console.log("[DEBUG] Headers   :", JSON.stringify(headers));
+    console.log("[DEBUG] Payload   :", JSON.stringify(finalPayload, null, 2));
+    console.log("[DEBUG] ==========================================\n");
+
     try {
         const response = await fetch(fetchUrl, {
             method: 'POST',
@@ -42,19 +46,42 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
             body: JSON.stringify(finalPayload)
         });
 
-        // Cek tipe konten yang dikembalikan
         const contentType = response.headers.get('content-type') || '';
         
-        // Jika respons bukan JSON (misal HTML dari Render / Cloudflare)
+        // ==========================================
+        // 🔍 DEBUG 2: LOG RESPONSE METADATA (HTTP STATUS)
+        // ==========================================
+        console.log("\n[DEBUG] ====== INCOMING RESPONSE METADATA ======");
+        console.log("[DEBUG] HTTP Status :", response.status, response.statusText);
+        console.log("[DEBUG] Content-Type:", contentType);
+        
+        // KITA BACA SEBAGAI TEKS DULU AGAR BISA DI-LOG APA ADANYA
+        const textResponse = await response.text();
+        
+        // ==========================================
+        // 🔍 DEBUG 3: LOG RAW BODY (JAWABAN SERVER)
+        // ==========================================
+        console.log("[DEBUG] Raw Body    :");
+        console.log(textResponse);
+        console.log("[DEBUG] ========================================\n");
+
         if (!contentType.includes('application/json')) {
-            const textResponse = await response.text();
-            throw new Error(`Respon Non-JSON (Status ${response.status}). Cek Log Render.com Anda. Cuplikan: ${textResponse.substring(0, 150)}`);
+            throw new Error(`Respon BUKAN JSON! Status: ${response.status}. Cek Log System untuk detail Raw Body.`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+            data = JSON.parse(textResponse);
+        } catch (parseError: any) {
+            throw new Error(`Gagal melakukan parse JSON dari respon Provider. Error: ${parseError.message}`);
+        }
+        
         return { raw_response: data };
         
     } catch (error: any) {
+        console.error("\n[DEBUG] XXXXXX PROVIDER FETCH ERROR XXXXXX");
+        console.error("[DEBUG] Pesan Error:", error.message);
+        console.error("[DEBUG] XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
         throw new Error(error.message);
     }
 }
@@ -69,6 +96,8 @@ export const dispatchProviderOrder = async (
 ) => {
     const provider = providerName.toLowerCase()
     
+    console.log(`\n[DEBUG] >>> Dispatching Order | Provider: ${providerName} | Action: ${action} | Code: ${productCode} | Cust: ${customerNumber} | Ref: ${refId}`);
+
     if (provider.includes('digiflazz')) {
         return await executeDigiflazz(action, creds, productCode, customerNumber, refId);
     } 
