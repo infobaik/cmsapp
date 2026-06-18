@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { getCookie } from 'hono/cookie'
-// Pastikan path ini benar (mundur 3 level)
 import { uploadToCloudinary } from '../../../services/cloudinary'
 
 const app = new Hono()
@@ -34,14 +33,25 @@ app.post('/settings/update', async (c) => {
   }
 })
 
+// ====================================================================
+// PERBAIKAN MUTLAK: GUNAKAN UPSERT AGAR KREDENSIAL BISA OTOMATIS DIBUAT
+// ====================================================================
 app.post('/system/update', async (c) => {
   const body = await c.req.parseBody()
   try {
-    const stmt = c.env.DB.prepare(`UPDATE system_settings SET value = ? WHERE key = ?`)
+    // Memanfaatkan fasilitas ON CONFLICT milik D1 (SQLite)
+    const stmt = c.env.DB.prepare(`
+      INSERT INTO system_settings (key, value) 
+      VALUES (?, ?) 
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
     const batch = []
+    
+    // Looping data input dari Form Settings
     for (const [key, value] of Object.entries(body)) {
-        batch.push(stmt.bind(value as string, key))
+        batch.push(stmt.bind(key, value as string)) 
     }
+    
     if (batch.length > 0) await c.env.DB.batch(batch)
     return c.redirect('/admin/settings?success=system_updated')
   } catch (error) {
@@ -49,9 +59,6 @@ app.post('/system/update', async (c) => {
   }
 })
 
-// ==========================================
-// KATEGORI: CREATE & UPDATE DENGAN GAMBAR
-// ==========================================
 app.post('/categories/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
@@ -76,7 +83,6 @@ app.post('/categories/create', async (c) => {
   }
 })
 
-// INI YANG SEBELUMNYA HILANG DAN MEMBUAT ERROR 404!
 app.post('/categories/:id/update', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.parseBody({ all: true })
@@ -231,9 +237,6 @@ app.post('/gateways/create', async (c) => {
   }
 })
 
-// ========================================================================
-// MESIN SYNC OKECONNECT (YANG SEBELUMNYA LENYAP KINI KEMBALI!)
-// ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
     const body = await c.req.parseBody();
@@ -251,7 +254,6 @@ app.post('/products/sync-okeconnect', async (c) => {
     const { results: dbCats } = await c.env.DB.prepare(`SELECT id, parent_id, name FROM categories WHERE type = 'product'`).all();
     const catNameToId = new Map(dbCats.map((c: any) => [c.name.toLowerCase(), c.id]));
 
-    // 1. Buat Kategori Induk Otomatis
     const uniqueParents = [...new Set(items.map((i: any) => i.kategori || 'Lainnya'))];
     for (const parentName of uniqueParents) {
       const lowerParent = String(parentName).toLowerCase();
@@ -262,7 +264,6 @@ app.post('/products/sync-okeconnect', async (c) => {
       }
     }
 
-    // 2. Buat Kategori Anak/Brand Otomatis
     const uniqueBrands = [...new Set(items.map((i: any) => JSON.stringify({ parent: i.kategori || 'Lainnya', brand: i.produk || 'Umum' })))];
     for (const brandStr of uniqueBrands) {
       const { parent, brand } = JSON.parse(brandStr as string);
@@ -283,17 +284,14 @@ app.post('/products/sync-okeconnect', async (c) => {
     const updateStmt = `UPDATE products SET price = ?, status = ?, name = ?, category_id = ?, order_type = ? WHERE provider_id = ? AND provider_product_code = ?`;
     const insertStmt = `INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, status) VALUES (?, ?, ?, ?, 'general', ?, ?, ?)`;
 
-    // 3. Masukkan Data Produk dengan Aturan Harga Enterprise
     for (const item of items) {
       const pCode = item.kode;
       const pName = item.keterangan || item.produk || item.nama || pCode;
       const basePrice = Number(item.harga);
       
-      // Aturan 1: Cek/Inquiry HARUS 0
       const isCekInquiry = basePrice === 0 || pCode.toUpperCase().startsWith('INQ') || pName.toLowerCase().includes('cek ');
       const finalSellPrice = isCekInquiry ? 0 : (basePrice + defaultMargin);
 
-      // Aturan 2: Postpaid Otomatis (Harga minus atau kode PAY)
       const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0 || pName.toLowerCase().includes('bayar tagihan');
       const oType = isPostpaid ? 'postpaid' : 'prepaid';
 
@@ -307,7 +305,6 @@ app.post('/products/sync-okeconnect', async (c) => {
       }
     }
 
-    // 4. Chunking agar D1 tidak Timeout
     const chunkSize = 50;
     for (let i = 0; i < statements.length; i += chunkSize) {
       const chunk = statements.slice(i, i + chunkSize);
