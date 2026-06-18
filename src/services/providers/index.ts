@@ -1,24 +1,57 @@
-import { processPrepaidDigiflazz, inquiryPostpaidDigiflazz, payPostpaidDigiflazz } from './digiflazz'
+import { executeDigiflazz } from './digiflazz'
 
-export async function dispatchProviderOrder(
-  providerName: string, 
-  command: 'payment' | 'inquiry',
-  providerCredentials: any, 
-  skuCode: string, 
-  customerNumber: string, 
-  trxId: string
-) {
-  switch (providerName.toLowerCase()) {
-    case 'digiflazz':
-      // Tentukan logika berdasarkan skuCode (biasanya Pasca memiliki akhiran khusus, atau ditentukan oleh sistem)
-      // Di sini kita asumsikan dispatcher mendeteksi tipe dari parameter command:
-      if (command === 'inquiry') {
-        return await inquiryPostpaidDigiflazz(providerCredentials, skuCode, customerNumber, trxId)
-      } else {
-        // Asumsi fallback payment: Anda bisa mendeteksi tipe produk prepaid vs postpaid di level pemanggil
-        return await processPrepaidDigiflazz(providerCredentials, skuCode, customerNumber, trxId)
-      }
-    default:
-      throw new Error(`Provider module '${providerName}' belum diimplementasikan.`)
-  }
+export interface ProviderCredentials {
+  endpoint: string;
+  key: string;
+  secret: string;
+  proxy_url: string | null;
+}
+
+/**
+ * FUNGSI INTI FORWARDER: 
+ * Mengeksekusi fetch secara cerdas. Jika proxy_url diset di DB, 
+ * maka request akan di-forward melalui Proxy, beserta header target aslinya.
+ */
+export const safeProviderFetch = async (creds: ProviderCredentials, payload: any) => {
+    const targetUrl = creds.endpoint;
+    const fetchUrl = creds.proxy_url ? creds.proxy_url : targetUrl;
+    
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
+
+    // Injeksi target URL untuk ditangkap oleh proxy.php
+    if (creds.proxy_url) {
+        headers['X-Target-Url'] = targetUrl;
+    }
+
+    try {
+        const response = await fetch(fetchUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        return { raw_response: data };
+    } catch (error: any) {
+        throw new Error(`Gagal menghubungi Endpoint/Proxy: ${error.message}`);
+    }
+}
+
+export const dispatchProviderOrder = async (
+    providerName: string,
+    action: string,
+    creds: ProviderCredentials,
+    productCode: string,
+    customerNumber: string,
+    refId: string
+) => {
+    const provider = providerName.toLowerCase()
+    
+    if (provider === 'digiflazz') {
+        return await executeDigiflazz(action, creds, productCode, customerNumber, refId);
+    }
+    
+    throw new Error(`Provider ${providerName} belum didukung sistem.`);
 }
