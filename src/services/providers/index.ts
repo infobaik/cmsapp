@@ -1,4 +1,5 @@
 import { executeDigiflazz } from './digiflazz'
+import { executeOkeConnect } from './okeconnect'
 
 export interface ProviderCredentials {
   endpoint: string;
@@ -7,11 +8,6 @@ export interface ProviderCredentials {
   proxy_url: string | null;
 }
 
-/**
- * FUNGSI INTI FORWARDER: 
- * Mengeksekusi fetch secara cerdas. Jika proxy_url diset di DB, 
- * maka request akan di-forward melalui Proxy, beserta header target aslinya.
- */
 export const safeProviderFetch = async (creds: ProviderCredentials, payload: any) => {
     const targetUrl = creds.endpoint;
     const fetchUrl = creds.proxy_url ? creds.proxy_url : targetUrl;
@@ -20,7 +16,6 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
         'Content-Type': 'application/json'
     };
 
-    // Injeksi target URL untuk ditangkap oleh proxy.php
     if (creds.proxy_url) {
         headers['X-Target-Url'] = targetUrl;
     }
@@ -49,9 +44,12 @@ export const dispatchProviderOrder = async (
 ) => {
     const provider = providerName.toLowerCase()
     
-    if (provider === 'digiflazz') {
+    if (provider.includes('digiflazz')) {
         return await executeDigiflazz(action, creds, productCode, customerNumber, refId);
+    } 
+    else if (provider.includes('okeconnect') || provider.includes('orderkuota')) {
+        return await executeOkeConnect(action, creds, productCode, customerNumber, refId);
     }
     
-    throw new Error(`Provider ${providerName} belum didukung sistem.`);
+    throw new Error(`Provider ${providerName} belum memiliki logic eksekutor.`);
 }
