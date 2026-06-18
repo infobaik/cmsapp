@@ -1,18 +1,26 @@
 import { Hono } from 'hono'
-import { getCookie } from 'hono/cookie'
-// PERBAIKAN MUTLAK: Path diubah menjadi ./services karena posisi file ada di src/index.ts
+import { getCookie, deleteCookie } from 'hono/cookie' // Tambahan deleteCookie untuk fungsi logout
 import { processPrepaidOrder } from './services/transaction'
 
 const app = new Hono()
 
+// KUNCI PERBAIKAN: Kita buat sub-router khusus agar semua endpoint di bawah ini 
+// otomatis memiliki awalan '/api/user/v1' sesuai dengan yang dibutuhkan frontend.
+const userApi = new Hono()
+
 // Middleware Proteksi UI
-app.use('/*', async (c, next) => {
+userApi.use('/*', async (c, next) => {
   const sessionId = getCookie(c, 'session_id')
   if (!sessionId) return c.redirect('/login')
 
   try {
     const user = await c.env.DB.prepare(`SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`).bind(sessionId).first()
-    if (!user) return c.redirect('/login')
+    
+    if (!user) {
+      // Bersihkan cookie jika sesi tidak valid
+      deleteCookie(c, 'session_id', { path: '/' })
+      return c.redirect('/login')
+    }
 
     c.set('ui_user_id', user.user_id)
     
@@ -23,8 +31,22 @@ app.use('/*', async (c, next) => {
   }
 })
 
+// --- ENDPOINT BARU: KELUAR / LOGOUT ---
+userApi.get('/logout', async (c) => {
+  const sessionId = getCookie(c, 'session_id')
+  
+  if (sessionId) {
+    // Hapus sesi dari database
+    await c.env.DB.prepare(`DELETE FROM sessions WHERE id = ?`).bind(sessionId).run()
+    // Hapus cookie dari browser
+    deleteCookie(c, 'session_id', { path: '/' })
+  }
+  
+  return c.redirect('/login')
+})
+
 // --- ENDPOINT: TARIK SALDO ---
-app.post('/wallet/withdraw', async (c) => {
+userApi.post('/wallet/withdraw', async (c) => {
   try {
     const userId = c.get('ui_user_id')
     const result = await c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available - 50000 WHERE user_id = ? AND balance_available >= 50000`).bind(userId).run()
@@ -37,7 +59,7 @@ app.post('/wallet/withdraw', async (c) => {
 })
 
 // --- ENDPOINT BARU: BUAT DEPOSIT ---
-app.post('/wallet/deposit', async (c) => {
+userApi.post('/wallet/deposit', async (c) => {
   try {
     const userId = c.get('ui_user_id')
     const body = await c.req.parseBody()
@@ -61,7 +83,7 @@ app.post('/wallet/deposit', async (c) => {
 })
 
 // --- ENDPOINT BARU: PROSES ORDER TRANSAKSI ---
-app.post('/order/create', async (c) => {
+userApi.post('/order/create', async (c) => {
   try {
     const userId = c.get('ui_user_id')
     const body = await c.req.parseBody()
@@ -87,6 +109,12 @@ app.post('/order/create', async (c) => {
     return c.redirect(`/user/order/${pid}?error=system_error`)
   }
 })
+
+// ========================================================================
+// DAFTARKAN SUB-ROUTER KE APLIKASI UTAMA
+// Ini yang membuat semua fungsi di atas bisa diakses lewat /api/user/v1/...
+// ========================================================================
+app.route('/api/user/v1', userApi)
 
 // PERBAIKAN: Fallback 404
 // Mencegah error "Promise did not resolve" jika ada URL yang nyasar
