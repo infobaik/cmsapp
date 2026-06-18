@@ -44,7 +44,9 @@ export default createRoute(async (c) => {
           <h2 class="text-3xl font-bold text-white tracking-tight">Rp {wallet.balance_pending.toLocaleString('id-ID')}</h2>
           <div class="mt-4 flex items-center gap-2 text-xs font-medium">
              <span class="text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded flex items-center gap-1">
-               <svg width="12" height="12" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></span >
+               {/* PERBAIKAN: Penutup SVG dan Span yang error sudah diperbaiki di bawah ini */}
+               <svg width="12" height="12" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Pending
+             </span>
              <span class="text-slate-500">Menunggu validasi sistem</span>
           </div>
         </div>
@@ -72,10 +74,7 @@ export default createRoute(async (c) => {
           {categories.map((cat: any) => (
             <a href={`/user/kategori/${cat.id}`} class="flex flex-col items-center justify-center p-4 bg-[#18181b] border border-slate-800/60 hover:border-emerald-500/50 rounded-2xl transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/10 group">
               
-              {/* Wadah pembungkus lingkaran utama */}
               <div class="w-12 h-12 rounded-full bg-[#121217] flex items-center justify-center mb-3 group-hover:bg-emerald-500/20 text-slate-400 group-hover:text-emerald-400 transition-colors overflow-hidden">
-                
-                {/* PERBAIKAN: Menggunakan object-cover dan menghapus padding (p-2) agar gambar memenuhi seluruh lingkaran secara penuh */}
                 {cat.image_url ? (
                   <img 
                     src={cat.image_url} 
