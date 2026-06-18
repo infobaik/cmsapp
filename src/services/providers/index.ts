@@ -8,8 +8,13 @@ export interface ProviderCredentials {
   proxy_url: string | null;
 }
 
-export const safeProviderFetch = async (creds: ProviderCredentials, payload: any) => {
-    let fetchUrl = creds.endpoint;
+export const safeProviderFetch = async (
+    creds: ProviderCredentials, 
+    payload: any, 
+    method: string = 'POST',
+    customTargetUrl?: string
+) => {
+    let fetchUrl = customTargetUrl || creds.endpoint;
     let finalPayload = payload;
     
     const headers: Record<string, string> = {
@@ -21,59 +26,54 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
         headers['x-relay-auth'] = 'BantarCaringin1'; 
         
         finalPayload = {
-            target_url: creds.endpoint,
-            target_method: 'POST',
+            target_url: customTargetUrl || creds.endpoint,
+            target_method: method, // Bisa GET atau POST
             target_headers: {
-                'Content-Type': 'application/json'
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             target_payload: payload
         };
     }
 
-    // ==========================================
-    // 🔍 DEBUG 1: LOG REQUEST (YANG DIKIRIM)
-    // ==========================================
     console.log("\n[DEBUG] ====== OUTGOING REQUEST TO PROVIDER ======");
-    console.log("[DEBUG] Fetch URL :", fetchUrl);
-    console.log("[DEBUG] Headers   :", JSON.stringify(headers));
-    console.log("[DEBUG] Payload   :", JSON.stringify(finalPayload, null, 2));
+    console.log("[DEBUG] Target URL:", customTargetUrl || creds.endpoint);
+    console.log("[DEBUG] Payload   :", JSON.stringify(finalPayload));
     console.log("[DEBUG] ==========================================\n");
 
     try {
         const response = await fetch(fetchUrl, {
-            method: 'POST',
+            method: 'POST', // Ke proxy selalu POST, proxy yang akan mengeksekusi metode aslinya
             headers,
             body: JSON.stringify(finalPayload)
         });
 
         const contentType = response.headers.get('content-type') || '';
-        
-        // ==========================================
-        // 🔍 DEBUG 2: LOG RESPONSE METADATA (HTTP STATUS)
-        // ==========================================
-        console.log("\n[DEBUG] ====== INCOMING RESPONSE METADATA ======");
-        console.log("[DEBUG] HTTP Status :", response.status, response.statusText);
-        console.log("[DEBUG] Content-Type:", contentType);
-        
-        // KITA BACA SEBAGAI TEKS DULU AGAR BISA DI-LOG APA ADANYA
         const textResponse = await response.text();
         
-        // ==========================================
-        // 🔍 DEBUG 3: LOG RAW BODY (JAWABAN SERVER)
-        // ==========================================
+        console.log("\n[DEBUG] ====== INCOMING RESPONSE METADATA ======");
+        console.log("[DEBUG] HTTP Status :", response.status);
         console.log("[DEBUG] Raw Body    :");
         console.log(textResponse);
         console.log("[DEBUG] ========================================\n");
 
-        if (!contentType.includes('application/json')) {
-            throw new Error(`Respon BUKAN JSON! Status: ${response.status}. Cek Log System untuk detail Raw Body.`);
-        }
-
         let data;
-        try {
-            data = JSON.parse(textResponse);
-        } catch (parseError: any) {
-            throw new Error(`Gagal melakukan parse JSON dari respon Provider. Error: ${parseError.message}`);
+        
+        // PERBAIKAN SAKTI: 
+        // Banyak API H2H Otomax membalas pakai XML atau Plain Text (contoh: STATUS=00|SN=123).
+        // Kita bungkus respon mentahnya ke JSON jika tidak bisa di-parse agar sistem transaksi tidak crash!
+        if (contentType.includes('application/json')) {
+            try {
+                data = JSON.parse(textResponse);
+            } catch (e) {
+                data = { raw_text: textResponse };
+            }
+        } else {
+            if (response.ok) {
+                data = { raw_text: textResponse };
+            } else {
+                throw new Error(`API Error (${response.status}): ${textResponse.substring(0, 100)}`);
+            }
         }
         
         return { raw_response: data };
@@ -81,7 +81,6 @@ export const safeProviderFetch = async (creds: ProviderCredentials, payload: any
     } catch (error: any) {
         console.error("\n[DEBUG] XXXXXX PROVIDER FETCH ERROR XXXXXX");
         console.error("[DEBUG] Pesan Error:", error.message);
-        console.error("[DEBUG] XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
         throw new Error(error.message);
     }
 }
@@ -96,8 +95,6 @@ export const dispatchProviderOrder = async (
 ) => {
     const provider = providerName.toLowerCase()
     
-    console.log(`\n[DEBUG] >>> Dispatching Order | Provider: ${providerName} | Action: ${action} | Code: ${productCode} | Cust: ${customerNumber} | Ref: ${refId}`);
-
     if (provider.includes('digiflazz')) {
         return await executeDigiflazz(action, creds, productCode, customerNumber, refId);
     } 
