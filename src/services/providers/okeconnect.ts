@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import { ProviderCredentials, safeProviderFetch } from './index'
 
 export const executeOkeConnect = async (
@@ -9,25 +8,54 @@ export const executeOkeConnect = async (
   refId: string
 ) => {
   
-  // Berdasarkan dokumentasi OkeConnect / OrderKuota:
-  // Kredensial mereka menggunakan MemberID dan PIN/API Secret.
   const memberId = creds.key;
-  const pin = creds.secret;
   
-  // Format md5(MemberID + PIN + ref_id)
-  const signString = memberId + pin + refId;
-  const signature = crypto.createHash('md5').update(signString).digest('hex');
+  // Format pemisahan di Admin: PIN|PASSWORD
+  let pin = creds.secret;
+  let password = "";
 
-  const payload = {
-    memberID: memberId,
+  if (creds.secret && creds.secret.includes('|')) {
+    const parts = creds.secret.split('|');
+    pin = parts[0];
+    password = parts[1];
+  }
+
+  // Parameter nominal qty. Biasanya untuk PPOB SKU terdaftar otomatis qty = 1.
+  const qty = '1';
+
+  // Menyusun Base URL agar selalu berakhiran /trx
+  let baseUrl = creds.endpoint.replace(/\/$/, '');
+  if (!baseUrl.endsWith('trx')) {
+     baseUrl += '/trx';
+  }
+
+  // MEMBANGUN QUERY STRING SEPERTI FORMAT H2H ANDA
+  // ?product={produk}&dest={nomor_hp}&qty={nominal}&refID={reff}&memberID={memberID}&pin={pin}&password={password}
+  const queryParams = new URLSearchParams({
     product: productCode,
     dest: customerNumber,
+    qty: qty,
     refID: refId,
-    sign: signature
-  };
+    memberID: memberId,
+    pin: pin,
+    password: password
+  });
 
-  // Gunakan safeProviderFetch agar langsung tertaut ke Proxy Universal jika dibutuhkan
-  const result = await safeProviderFetch(creds, payload);
+  const targetUrl = `${baseUrl}?${queryParams.toString()}`;
+
+  // EKSEKUSI REQUEST GET
+  // Kita passing null untuk payload karena data sudah menempel di targetUrl
+  const result = await safeProviderFetch(creds, null, 'GET', targetUrl);
   
+  // MAPPING HASIL (Berjaga-jaga jika respon berbentuk JSON standar)
+  if (action === 'inquiry') {
+     result.bill_amount = result.raw_response?.harga || result.raw_response?.tagihan || 0;
+     result.customer_name = result.raw_response?.nama || result.raw_response?.customer_name || 'Pelanggan';
+  }
+
+  if (action === 'payment') {
+     result.sn = result.raw_response?.sn || result.raw_response?.serial_number || result.raw_response?.ref || '';
+  }
+
   return result;
 }
