@@ -1,7 +1,6 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // Tambahkan image_url pada query select
   const query = `SELECT id, parent_id, name, type, image_url FROM categories ORDER BY type, name`
   const { results: categories } = await c.env.DB.prepare(query).all()
 
@@ -11,41 +10,47 @@ export default createRoute(async (c) => {
     <div class="max-w-7xl mx-auto space-y-6">
       
       <div class="mb-6">
-        <h1 class="text-2xl font-bold text-slate-100">Kategori & Label</h1>
-        <p class="text-sm text-slate-400">Kelola hierarki produk dan artikel di website Anda.</p>
+        <h1 class="text-2xl font-bold text-slate-100">Kategori & Brand</h1>
+        <p class="text-sm text-slate-400">Kelola hierarki dan Icon/Logo untuk produk Anda di sini.</p>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* FORM TAMBAH KATEGORI */}
+        {/* FORM TAMBAH KATEGORI / BRAND */}
         <div class="lg:col-span-1 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl h-fit">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Tambah Baru</h2>
-          {/* Form ini masih murni untuk "Create" awal tanpa upload icon, icon ditambahkan saat Edit */}
-          <form method="POST" action="/api/admin/v1/categories/create" class="space-y-4">
+          
+          {/* PERBAIKAN: Tambah enctype multipart/form-data untuk upload gambar */}
+          <form method="POST" action="/api/admin/v1/categories/create" enctype="multipart/form-data" class="space-y-4">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nama Kategori</label>
-              <input type="text" name="name" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none transition-colors" />
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nama Kategori / Brand</label>
+              <input type="text" name="name" required placeholder="Cth: Pulsa, Telkomsel, DANA" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none transition-colors" />
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Slug URL (Opsional)</label>
-              <input type="text" name="slug" placeholder="contoh-kategori" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-400 text-sm outline-none transition-colors" />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Peruntukan Tipe</label>
-              <select name="type" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none">
-                <option value="product">Katalog Produk</option>
-                <option value="blog">Artikel / Blog</option>
-              </select>
-            </div>
+            
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Kategori Induk</label>
               <select name="parent_id" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none">
-                <option value="">-- Tidak Ada (Jadikan Parent) --</option>
+                <option value="">-- Jadikan Induk Utama --</option>
                 {parents.map((p: any) => (
                   <option value={p.id}>{p.name} ({p.type})</option>
                 ))}
               </select>
             </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Icon / Logo Brand</label>
+              <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2 text-slate-400 text-sm outline-none transition-colors file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20" />
+              <p class="text-[10px] text-slate-500 mt-1">Gambar ini akan otomatis digunakan oleh semua produk di bawah kategori ini.</p>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Peruntukan Tipe</label>
+              <select name="type" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none">
+                <option value="product">Produk PPOB</option>
+                <option value="blog">Artikel / Blog</option>
+              </select>
+            </div>
+
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl transition-colors mt-2 shadow-lg shadow-blue-500/20">
               Simpan Kategori
             </button>
@@ -54,47 +59,37 @@ export default createRoute(async (c) => {
 
         {/* LIST KATEGORI */}
         <div class="lg:col-span-2 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl">
-          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Daftar Hierarki Kategori</h2>
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Daftar Hierarki Kategori & Brand</h2>
           
           <div class="space-y-4">
             {parents.map((parent: any) => (
               <div class="bg-[#121217] border border-slate-800/60 rounded-xl p-4">
-                <div class="flex items-center gap-2 mb-3">
-                  
-                  {/* Logika Tampilan Icon Parent */}
+                <div class="flex items-center gap-3 mb-3">
                   {parent.image_url ? (
-                    <img src={parent.image_url} alt="icon" class="w-6 h-6 rounded object-cover border border-slate-700" />
+                     <img src={parent.image_url} alt={parent.name} class="w-8 h-8 rounded bg-white object-contain p-1" />
                   ) : (
-                    <svg width="18" height="18" class="text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" /></svg>
+                     <div class="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                     </div>
                   )}
-                  
-                  <span class="font-bold text-slate-200">{parent.name}</span>
-                  <span class="text-[10px] text-slate-500 uppercase tracking-wider bg-slate-800 px-2 py-0.5 rounded ml-2">{parent.type}</span>
-                  
-                  {/* Tombol Edit Parent */}
-                  <a href={`/admin/categories/${parent.id}`} class="ml-auto text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-3 py-1 rounded-lg transition-colors">
-                    Edit
-                  </a>
+                  <div>
+                    <span class="font-bold text-slate-200 block">{parent.name}</span>
+                    <span class="text-[10px] text-slate-500 uppercase tracking-wider">{parent.type}</span>
+                  </div>
                 </div>
                 
                 {categories.filter((child: any) => child.parent_id === parent.id).length > 0 && (
-                  <ul class="ml-6 pl-4 border-l border-slate-800 space-y-2">
+                  <ul class="ml-11 space-y-2 border-l border-slate-800 pl-4 py-1">
                     {categories
                       .filter((child: any) => child.parent_id === parent.id)
                       .map((child: any) => (
-                        <li class="flex items-center gap-2 text-sm text-slate-400 before:content-[''] before:w-3 before:h-px before:bg-slate-700">
-                          
-                          {/* Logika Tampilan Icon Child */}
-                          {child.image_url && (
-                             <img src={child.image_url} alt="icon" class="w-4 h-4 rounded object-cover border border-slate-700" />
-                          )}
-                          
-                          <span>{child.name}</span>
-                          
-                          {/* Tombol Edit Child */}
-                          <a href={`/admin/categories/${child.id}`} class="ml-auto text-[10px] bg-slate-800 text-slate-400 hover:bg-blue-600 hover:text-white px-2 py-0.5 rounded transition-colors">
-                            Edit
-                          </a>
+                        <li class="flex items-center gap-3 text-sm text-slate-300">
+                           {child.image_url ? (
+                              <img src={child.image_url} alt={child.name} class="w-6 h-6 rounded bg-white object-contain p-0.5" />
+                           ) : (
+                              <div class="w-6 h-6 rounded border border-slate-700 bg-slate-800/50"></div>
+                           )}
+                           <span>{child.name}</span>
                         </li>
                       ))}
                   </ul>
@@ -108,6 +103,6 @@ export default createRoute(async (c) => {
 
       </div>
     </div>,
-    { title: 'Kategori' }
+    { title: 'Kategori & Brand' }
   )
 })
