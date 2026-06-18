@@ -1,14 +1,10 @@
 import { Hono } from 'hono'
 import { getCookie } from 'hono/cookie'
-
-// PERBAIKAN MUTLAK: Path wajib mundur 3 level (../../../)
+// Pastikan path ini benar (mundur 3 level)
 import { uploadToCloudinary } from '../../../services/cloudinary'
 
 const app = new Hono()
 
-// ========================================================================
-// MIDDLEWARE PROTEKSI
-// ========================================================================
 app.use('/*', async (c, next) => {
   const sessionId = getCookie(c, 'session_id')
   if (!sessionId) return c.redirect('/login')
@@ -27,16 +23,9 @@ app.use('/*', async (c, next) => {
   return await next()
 })
 
-// ========================================================================
-// 1. PENGATURAN WEBSITE 
-// ========================================================================
 app.post('/settings/update', async (c) => {
   const body = await c.req.parseBody()
-  const siteConfig = {
-    siteName: body.siteName,
-    siteDescription: body.siteDescription,
-    themeColor: body.themeColor
-  }
+  const siteConfig = { siteName: body.siteName, siteDescription: body.siteDescription, themeColor: body.themeColor }
   try {
     await c.env.SITE_KV.put('site_settings', JSON.stringify(siteConfig))
     return c.redirect('/admin/settings?success=true')
@@ -60,9 +49,9 @@ app.post('/system/update', async (c) => {
   }
 })
 
-// ========================================================================
-// 3. MANAJEMEN KATEGORI & BRAND (DENGAN GAMBAR)
-// ========================================================================
+// ==========================================
+// KATEGORI: CREATE & UPDATE DENGAN GAMBAR
+// ==========================================
 app.post('/categories/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
@@ -77,25 +66,23 @@ app.post('/categories/create', async (c) => {
     if (imageFile && imageFile.size > 0) {
       imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
     }
-
     await c.env.DB.prepare(`
       INSERT INTO categories (parent_id, name, slug, type, image_url) 
       VALUES (?, ?, ?, ?, ?)
     `).bind(parentId, name, slug, type, imageUrl).run()
-    
     return c.redirect('/admin/categories?success=true')
   } catch (error) {
-    console.error("Gagal membuat kategori:", error)
     return c.redirect('/admin/categories?error=failed')
   }
 })
 
+// INI YANG SEBELUMNYA HILANG DAN MEMBUAT ERROR 404!
 app.post('/categories/:id/update', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.parseBody({ all: true })
   
   const name = body.name as string
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const slug = body.slug as string || name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   const type = body.type as string
   const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
   
@@ -104,7 +91,6 @@ app.post('/categories/:id/update', async (c) => {
   try {
     if (imageFile && imageFile.size > 0) {
       const imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
-      
       await c.env.DB.prepare(`
         UPDATE categories 
         SET parent_id = ?, name = ?, slug = ?, type = ?, image_url = ? 
@@ -117,20 +103,14 @@ app.post('/categories/:id/update', async (c) => {
         WHERE id = ?
       `).bind(parentId, name, slug, type, id).run()
     }
-    
-    return c.redirect(`/admin/categories/${id}?success=true`)
+    return c.redirect(`/admin/categories?success=updated`)
   } catch (error: any) {
-    console.error("Gagal update kategori:", error)
     return c.redirect(`/admin/categories/${id}?error=failed`)
   }
 })
 
-// ========================================================================
-// 4. MANAJEMEN PRODUK 
-// ========================================================================
 app.post('/products/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
-  
   const name = body.name as string
   const categoryId = parseInt(body.category_id as string)
   const providerId = parseInt(body.provider_id as string)
@@ -146,12 +126,10 @@ app.post('/products/create', async (c) => {
     if (imageFile && imageFile.size > 0) {
       imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
     }
-
     await c.env.DB.prepare(`
       INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, image_url)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(categoryId, providerId, providerProductCode, name, stockType, orderType, price, imageUrl).run()
-
     return c.redirect('/admin/products?success=true')
   } catch (error: any) {
     return c.redirect(`/admin/products?error=${encodeURIComponent(error.message)}`)
@@ -161,14 +139,12 @@ app.post('/products/create', async (c) => {
 app.post('/products/:id/update', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.parseBody({ all: true })
-  
   const name = body.name as string
   const categoryId = parseInt(body.category_id as string)
   const stockType = body.stock_type as string
   const orderType = body.order_type as string
   const price = parseFloat(body.price as string)
   const status = body.status as string
-  
   const imageFile = body.image as File
 
   try {
@@ -192,12 +168,8 @@ app.post('/products/:id/update', async (c) => {
   }
 })
 
-// ========================================================================
-// 6. MANAJEMEN PROVIDER H2H
-// ========================================================================
 app.post('/providers/create', async (c) => {
   const body = await c.req.parseBody()
-  
   const name = body.name as string
   const apiEndpoint = body.api_endpoint as string
   const apiKey = body.api_key as string
@@ -215,9 +187,6 @@ app.post('/providers/create', async (c) => {
   }
 })
 
-// ========================================================================
-// 7. VALIDASI DEPOSIT 
-// ========================================================================
 app.post('/deposits/:id/approve', async (c) => {
   const depositId = c.req.param('id')
   try {
@@ -244,9 +213,6 @@ app.post('/deposits/:id/reject', async (c) => {
   }
 })
 
-// ========================================================================
-// 8. PAYMENT GATEWAY
-// ========================================================================
 app.post('/gateways/create', async (c) => {
   const body = await c.req.parseBody()
   const name = body.name as string
@@ -266,7 +232,7 @@ app.post('/gateways/create', async (c) => {
 })
 
 // ========================================================================
-// 9. BATCH SYNC PRODUK JSON (OKECONNECT & H2H)
+// MESIN SYNC OKECONNECT (YANG SEBELUMNYA LENYAP KINI KEMBALI!)
 // ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
@@ -285,8 +251,8 @@ app.post('/products/sync-okeconnect', async (c) => {
     const { results: dbCats } = await c.env.DB.prepare(`SELECT id, parent_id, name FROM categories WHERE type = 'product'`).all();
     const catNameToId = new Map(dbCats.map((c: any) => [c.name.toLowerCase(), c.id]));
 
+    // 1. Buat Kategori Induk Otomatis
     const uniqueParents = [...new Set(items.map((i: any) => i.kategori || 'Lainnya'))];
-    
     for (const parentName of uniqueParents) {
       const lowerParent = String(parentName).toLowerCase();
       if (!catNameToId.has(lowerParent)) {
@@ -296,8 +262,8 @@ app.post('/products/sync-okeconnect', async (c) => {
       }
     }
 
+    // 2. Buat Kategori Anak/Brand Otomatis
     const uniqueBrands = [...new Set(items.map((i: any) => JSON.stringify({ parent: i.kategori || 'Lainnya', brand: i.produk || 'Umum' })))];
-    
     for (const brandStr of uniqueBrands) {
       const { parent, brand } = JSON.parse(brandStr as string);
       const lowerBrand = String(brand).toLowerCase();
@@ -317,14 +283,17 @@ app.post('/products/sync-okeconnect', async (c) => {
     const updateStmt = `UPDATE products SET price = ?, status = ?, name = ?, category_id = ?, order_type = ? WHERE provider_id = ? AND provider_product_code = ?`;
     const insertStmt = `INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, status) VALUES (?, ?, ?, ?, 'general', ?, ?, ?)`;
 
+    // 3. Masukkan Data Produk dengan Aturan Harga Enterprise
     for (const item of items) {
       const pCode = item.kode;
       const pName = item.keterangan || item.produk || item.nama || pCode;
       const basePrice = Number(item.harga);
       
+      // Aturan 1: Cek/Inquiry HARUS 0
       const isCekInquiry = basePrice === 0 || pCode.toUpperCase().startsWith('INQ') || pName.toLowerCase().includes('cek ');
       const finalSellPrice = isCekInquiry ? 0 : (basePrice + defaultMargin);
 
+      // Aturan 2: Postpaid Otomatis (Harga minus atau kode PAY)
       const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0 || pName.toLowerCase().includes('bayar tagihan');
       const oType = isPostpaid ? 'postpaid' : 'prepaid';
 
@@ -338,6 +307,7 @@ app.post('/products/sync-okeconnect', async (c) => {
       }
     }
 
+    // 4. Chunking agar D1 tidak Timeout
     const chunkSize = 50;
     for (let i = 0; i < statements.length; i += chunkSize) {
       const chunk = statements.slice(i, i + chunkSize);
@@ -346,7 +316,6 @@ app.post('/products/sync-okeconnect', async (c) => {
 
     return c.redirect(`/admin/products?success=Berhasil+sinkronisasi+dan+pemetaan+${statements.length}+produk`);
   } catch (error: any) {
-    console.error("Sync Error:", error);
     return c.redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
   }
 })
