@@ -247,7 +247,8 @@ app.post('/products/sync-okeconnect', async (c) => {
     const items = Array.isArray(result) ? result : (result.data || []);
     if (!items || items.length === 0) return c.redirect('/admin/products?error=Data+JSON+Kosong');
 
-    let dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+    // PERBAIKAN: Hapus filter type = 'product' karena kolom type sudah kita buang dari schema
+    let dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories`).all();
     let slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
 
     // 1. Eksekusi Kategori Induk Aman
@@ -256,7 +257,8 @@ app.post('/products/sync-okeconnect', async (c) => {
     for (const parent of uniqueParents) {
       const slug = String(parent).toLowerCase().replace(/[^a-z0-9]+/g, '-');
       if (!slugToId.has(slug)) {
-         parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (NULL, ?, ?, 'product') ON CONFLICT(slug) DO NOTHING`).bind(parent, slug));
+         // PERBAIKAN: Insert tanpa kolom type
+         parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug) VALUES (NULL, ?, ?) ON CONFLICT(slug) DO NOTHING`).bind(parent, slug));
          slugToId.set(slug, -1); 
       }
     }
@@ -265,7 +267,7 @@ app.post('/products/sync-okeconnect', async (c) => {
     }
 
     if (parentStatements.length > 0) {
-      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories`).all();
       slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
     }
 
@@ -279,7 +281,8 @@ app.post('/products/sync-okeconnect', async (c) => {
       
       if (!slugToId.has(brandSlug)) {
          const parentId = slugToId.get(parentSlug);
-         brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug, type) VALUES (?, ?, ?, 'product') ON CONFLICT(slug) DO NOTHING`).bind(parentId, brand, brandSlug));
+         // PERBAIKAN: Insert tanpa kolom type
+         brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug) VALUES (?, ?, ?) ON CONFLICT(slug) DO NOTHING`).bind(parentId, brand, brandSlug));
          slugToId.set(brandSlug, -1);
       }
     }
@@ -288,45 +291,62 @@ app.post('/products/sync-okeconnect', async (c) => {
     }
 
     if (brandStatements.length > 0) {
-      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories WHERE type = 'product'`).all();
+      dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories`).all();
       slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
     }
 
     // 3. EKSEKUSI PRODUK: UPSERT KUNCI GANDA MUTLAK
-    // Jika kode belum ada -> Insert Baru. Jika kode sudah ada -> Update Data Lama.
+    // PERBAIKAN: Menambahkan description, is_visible, provider_status.
+    // Catatan: Kolom `status` utama tidak di-update pada konflik agar setelan admin tidak tertimpa!
     const upsertStmt = `
-      INSERT INTO products (category_id, provider_id, provider_product_code, name, stock_type, order_type, price, status) 
-      VALUES (?, ?, ?, ?, 'general', ?, ?, ?)
+      INSERT INTO products (category_id, provider_id, provider_product_code, name, description, stock_type, order_type, price, status, provider_status, is_visible) 
+      VALUES (?, ?, ?, ?, ?, 'general', ?, ?, 'active', ?, ?)
       ON CONFLICT(provider_id, provider_product_code) DO UPDATE SET 
         price = excluded.price, 
-        status = excluded.status, 
-        name = excluded.name, 
-        order_type = excluded.order_type
+        provider_status = excluded.provider_status, 
+        name = excluded.name,
+        description = excluded.description,
+        order_type = excluded.order_type,
+        is_visible = excluded.is_visible
     `;
 
     const statements = [];
     for (const item of items) {
       const pCode = item.kode;
       const pName = item.keterangan || item.produk || item.nama || pCode;
+      const pDesc = item.keterangan || '';
       const basePrice = Number(item.harga);
       
       // LOGIKA PEMISAHAN PREPAID/POSTPAID & INQUIRY
-      // 1. Inquiry: Harga 0 atau prefix INQ
-      const isCekInquiry = basePrice === 0 || pCode.toUpperCase().startsWith('INQ');
+      let oType = 'prepaid';
+      let finalSellPrice = 0;
+      let isVis = 1;
+
+      if (basePrice === 0 || pCode.toUpperCase().startsWith('INQ')) {
+        // Produk Cek Tagihan
+        oType = 'inquiry';
+        finalSellPrice = 0;
+        isVis = 1;
+      } else if (basePrice < 0 || pCode.toUpperCase().startsWith('PAY')) {
+        // Produk Eksekusi Bayar Tagihan
+        oType = 'postpaid';
+        finalSellPrice = basePrice; 
+        isVis = 0; // Sembunyikan dari katalog!
+      } else {
+        // Produk Prabayar Umum (Pulsa, Game, Data)
+        oType = 'prepaid';
+        finalSellPrice = basePrice + defaultMargin;
+        isVis = 1;
+      }
       
-      // 2. Postpaid: Prefix PAY atau harga minus (komisi)
-      const isPostpaid = pCode.toUpperCase().startsWith('PAY') || basePrice < 0;
-      
-      const oType = isPostpaid ? 'postpaid' : 'prepaid';
-      const finalSellPrice = isCekInquiry ? 0 : (basePrice + defaultMargin);
-      const pStatus = (item.status === '1' || item.status === 'normal') ? 'active' : 'inactive';
+      const pProvStatus = (item.status === '1' || item.status === 'normal') ? 'active' : 'inactive';
       
       // Ambil ID Brand dari Map
       const brandSlug = String(item.produk || 'Umum').toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const brandId = slugToId.get(brandSlug);
 
       statements.push(c.env.DB.prepare(upsertStmt).bind(
-          brandId, providerId, pCode, pName, oType, finalSellPrice, pStatus
+          brandId, providerId, pCode, pName, pDesc, oType, finalSellPrice, pProvStatus, isVis
       ));
     }
 
