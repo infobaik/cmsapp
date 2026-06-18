@@ -20,8 +20,8 @@ export default createRoute(async (c) => {
     )
   }
 
-  // Ambil data kategori untuk dropdown
-  const { results: categories } = await c.env.DB.prepare(`SELECT id, name FROM categories WHERE type = 'product' ORDER BY name ASC`).all()
+  // PERBAIKAN SAKTI: Mengambil data semua kategori tanpa filter 'type = 'product'' agar database tidak crash
+  const { results: categories } = await c.env.DB.prepare(`SELECT id, name FROM categories ORDER BY name ASC`).all()
 
   const successMsg = c.req.query('success')
   const errorMsg = c.req.query('error')
@@ -72,9 +72,17 @@ export default createRoute(async (c) => {
             </div>
           </div>
 
+          {/* KOLOM KETERANGAN TAMBAHAN DARI JSON */}
+          <div class="grid grid-cols-1 gap-6">
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Keterangan / Deskripsi Produk</label>
+              <textarea name="description" rows={3} class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none transition-colors text-sm">{product.description as string || ''}</textarea>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Pilih Kategori</label>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Pilih Kategori / Brand</label>
               <select name="category_id" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none cursor-pointer text-sm">
                 {categories.map((cat: any) => (
                   <option value={cat.id} selected={cat.id === product.category_id}>{cat.name}</option>
@@ -82,10 +90,11 @@ export default createRoute(async (c) => {
               </select>
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Tipe Transaksi (Order Type)</label>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Tipe Alur Transaksi (Order Type)</label>
               <select name="order_type" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none cursor-pointer text-sm">
-                <option value="prepaid" selected={product.order_type === 'prepaid'}>Prepaid (Topup/Pulsa)</option>
-                <option value="postpaid" selected={product.order_type === 'postpaid'}>Postpaid (Tagihan PPOB)</option>
+                <option value="prepaid" selected={product.order_type === 'prepaid'}>Prepaid (Prabayar / Topup Putus)</option>
+                <option value="postpaid" selected={product.order_type === 'postpaid'}>Postpaid (Pascabayar / Eksekusi Bayar)</option>
+                <option value="inquiry" selected={product.order_type === 'inquiry'}>Inquiry (Pascabayar / Cek Tagihan)</option>
               </select>
             </div>
           </div>
@@ -95,7 +104,6 @@ export default createRoute(async (c) => {
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Provider H2H (Supplier)</label>
               <input type="text" disabled value={`ID Provider: ${product.provider_id}`} class="w-full bg-[#121217] border border-slate-800/40 rounded-xl p-3 text-slate-500 outline-none cursor-not-allowed text-sm" />
-              <p class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Hubungan relasi supplier dikunci untuk menjaga validitas log histori pelacakan transaksi produk.</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Kode SKU Provider</label>
@@ -103,7 +111,7 @@ export default createRoute(async (c) => {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-slate-800/60 pt-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 border-t border-slate-800/60 pt-6">
              <div>
               <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Manajemen Stok</label>
               <select name="stock_type" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none cursor-pointer text-sm">
@@ -112,16 +120,30 @@ export default createRoute(async (c) => {
               </select>
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Status Distribusi</label>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Status Distribusi Admin</label>
               <select name="status" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none cursor-pointer text-sm">
                 <option value="active" selected={product.status === 'active'}>Aktif (Dijual)</option>
                 <option value="inactive" selected={product.status === 'inactive'}>Nonaktif (Sembunyikan)</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ganti Gambar Baru</label>
-              <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 rounded-xl p-2 text-slate-400 outline-none text-sm file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 transition-all cursor-pointer" />
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Visibilitas Katalog User</label>
+              <select name="is_visible" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none cursor-pointer text-sm">
+                <option value="1" selected={product.is_visible === 1}>Tampilkan</option>
+                <option value="0" selected={product.is_visible === 0}>Sembunyikan (PAY/Komisi)</option>
+              </select>
             </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ganti Gambar Baru</label>
+              <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 rounded-xl p-2 text-slate-400 outline-none text-sm file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 cursor-pointer" />
+            </div>
+          </div>
+
+          <div class="p-3 bg-[#121217] border border-slate-800 rounded-xl text-xs text-slate-400 flex items-center gap-2">
+            <span class="font-bold uppercase tracking-wide text-blue-400 shrink-0">Status Sistem Pusat Provider:</span>
+            <span class={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${product.provider_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+              {product.provider_status}
+            </span>
           </div>
 
           <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 mt-4 text-sm">
@@ -131,6 +153,6 @@ export default createRoute(async (c) => {
       </div>
 
     </div>,
-    { title: `Edit Produk` }
+    { title: 'Edit Produk' }
   )
 })
