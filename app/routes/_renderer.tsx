@@ -1,6 +1,5 @@
 import { jsxRenderer } from 'hono/jsx-renderer'
-// PERBAIKAN: Impor komponen Link dan Script dari honox
-import { Link, Script } from 'honox/server' 
+import { Link, Script } from 'honox/server'
 
 export default jsxRenderer(({ children, title }, c) => {
   const user = c.get('user')
@@ -10,50 +9,73 @@ export default jsxRenderer(({ children, title }, c) => {
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>{title ? `${title} | Sistem Pintar` : 'Topup PPOB Tercepat'}</title>
+        <title>{title ? `${title} | SistemCo.` : 'Topup PPOB Tercepat'}</title>
         
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-        
-        {/* PERBAIKAN: Gunakan komponen Link dari HonoX */}
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
         <Link href="/app/style.css" rel="stylesheet" />
-        
-        {/* PERBAIKAN: Gunakan komponen Script dari HonoX, hapus pengecekan env manual */}
         <Script src="/app/client.ts" async />
       </head>
-      <body class="font-sans antialiased bg-slate-950 text-slate-100">
-        <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
-          <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div class="text-xl font-black text-blue-500 italic tracking-tighter">
-              <a href="/">LOGO.</a>
+      
+      <body class="font-sans antialiased bg-[#121217] text-slate-100 min-h-screen flex flex-col selection:bg-blue-500/30 selection:text-blue-200">
+        
+        {/* HEADER ELEGAN (Glassmorphism) */}
+        <header class="bg-[#18181b]/80 backdrop-blur-md border-b border-slate-800/60 sticky top-0 z-50">
+          <nav class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center font-black text-white shadow-lg shadow-blue-500/20">
+                S
+              </div>
+              <a href="/" class="text-xl font-bold tracking-tight text-white hover:text-blue-400 transition-colors">SistemCo.</a>
             </div>
             
-            <ul class="flex items-center gap-6 text-sm font-semibold text-slate-300">
+            <ul class="flex items-center gap-4 text-sm font-semibold text-slate-300">
               {!user ? (
                 <>
-                  <li><a href="/" class="hover:text-white transition">Beranda</a></li>
-                  <li><a href="/login" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full transition">Masuk / Daftar</a></li>
+                  <li class="hidden sm:block"><a href="/" class="hover:text-white transition-colors px-3 py-2">Beranda</a></li>
+                  <li class="hidden sm:block"><a href="/register" class="hover:text-white transition-colors px-3 py-2">Daftar</a></li>
+                  <li>
+                    <a href="/login" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 border border-blue-500/50">
+                      Masuk Area
+                    </a>
+                  </li>
                 </>
               ) : (
                 <>
-                  <li class="hidden md:block">Halo, <span class="text-white">{user.name}</span></li>
-                  <li><a href="/user/dashboard" class="hover:text-white transition">Dashboard</a></li>
+                  <li class="hidden md:block text-slate-400">Hi, <span class="text-white">{user.name}</span></li>
+                  <li>
+                    <a href="/user/dashboard" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 border border-emerald-500/50">
+                      Dashboard
+                    </a>
+                  </li>
                   {user.role === 'admin' && (
-                    <li><a href="/admin" class="text-amber-400 hover:text-amber-300 transition">Panel Admin</a></li>
+                    <li>
+                      <a href="/admin" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 border border-blue-500/50 hidden sm:block">
+                        Admin
+                      </a>
+                    </li>
                   )}
-                  <li><a href="/api/user/v1/logout" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-full transition">Keluar</a></li>
                 </>
               )}
             </ul>
           </nav>
         </header>
         
-        <main>
+        {/* AREA KONTEN FLEKSIBEL */}
+        <main class="flex-1 flex flex-col relative">
           {children}
         </main>
         
-        <footer class="bg-slate-900 border-t border-slate-800 mt-12 py-8 text-center text-slate-500 text-sm">
-          <p>&copy; 2026 Hak Cipta Dilindungi. Sistem Multi-Supplier Pintar.</p>
+        {/* FOOTER MODERN */}
+        <footer class="bg-[#0a0a0c] border-t border-slate-800/60 mt-auto py-10 relative z-10">
+          <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+               <div class="w-6 h-6 bg-slate-800 rounded flex items-center justify-center font-bold text-slate-400 text-xs">S</div>
+               <span class="text-sm font-bold text-slate-200">SistemCo.</span>
+            </div>
+            <p class="text-slate-500 text-xs font-medium">&copy; 2026 Hak Cipta Dilindungi. Sistem Multi-Supplier Pintar.</p>
+          </div>
         </footer>
+
       </body>
     </html>
   )
