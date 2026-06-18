@@ -1,43 +1,52 @@
-// src/services/cloudinary.ts
+export const uploadToCloudinary = async (DB: any, file: File): Promise<string> => {
+    
+    // 1. Tarik Kredensial dari Database
+    const { results } = await DB.prepare(`
+      SELECT key, value FROM system_settings 
+      WHERE key IN ('cloudinary_cloud_name', 'cloudinary_api_key', 'cloudinary_api_secret')
+    `).all()
+    
+    const config: Record<string, string> = {}
+    results.forEach((row: any) => { config[row.key] = row.value })
 
-export async function uploadToCloudinary(db: D1Database, file: File) {
-  // 1. Tarik kredensial dari tabel system_settings
-  const settings = await db.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'cloudinary_%'`).all()
-  
-  const config = settings.results.reduce((acc: any, row: any) => {
-    acc[row.key] = row.value;
-    return acc;
-  }, {});
+    const cloudName = config['cloudinary_cloud_name']
+    const apiKey = config['cloudinary_api_key']
+    const apiSecret = config['cloudinary_api_secret']
 
-  const cloudName = config.cloudinary_cloud_name;
-  const apiKey = config.cloudinary_api_key;
-  const apiSecret = config.cloudinary_api_secret;
+    if (!cloudName || !apiKey || !apiSecret) {
+        throw new Error("Kredensial Cloudinary belum disetting di Admin Panel.")
+    }
 
-  if (!cloudName || !apiKey || !apiSecret) {
-    throw new Error('Kredensial Cloudinary belum diatur di Admin Area');
-  }
+    // 2. Siapkan Parameter API & Buat Signature SHA-1
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    
+    // Rumus Wajib Cloudinary: signature = SHA-1(timestamp=123456789 + api_secret)
+    const strToSign = `timestamp=${timestamp}${apiSecret}`
+    const msgBuffer = new TextEncoder().encode(strToSign)
+    
+    // Gunakan globalThis.crypto agar jalan mulus di Cloudflare Edge
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-1', msgBuffer)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const signature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 
-  // 2. Siapkan parameter upload (Unsigned Upload direkomendasikan untuk REST sederhana)
-  // Catatan: Pastikan Anda membuat "Upload Preset" bertipe 'unsigned' di setelan Cloudinary
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', 'ml_default'); // Ganti dengan nama preset unsigned Anda
-  
-  // Jika ingin menggunakan Signed Upload (Lebih aman), Anda butuh fungsi crypto SHA-1
-  // Namun untuk efisiensi serverless, unsigned upload dengan preset spesifik lebih disukai
+    // 3. Masukkan ke FormData
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('api_key', apiKey)
+    formData.append('timestamp', timestamp)
+    formData.append('signature', signature)
 
-  // 3. Tembak API Cloudinary
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-    method: 'POST',
-    body: formData
-  });
+    // 4. Eksekusi Tembak ke API Cloudinary
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: formData
+    })
 
-  const data = await response.json() as any;
+    if (!response.ok) {
+        const err = await response.json()
+        throw new Error(`Upload Gagal: ${err.error?.message}`)
+    }
 
-  if (!response.ok) {
-    throw new Error(data.error?.message || 'Gagal mengunggah gambar ke Cloudinary');
-  }
-
-  // 4. Kembalikan URL gambar yang sudah aman (HTTPS)
-  return data.secure_url;
+    const data = await response.json()
+    return data.secure_url
 }
