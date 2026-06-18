@@ -71,7 +71,7 @@ export async function processPrepaidOrder(
     await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
       .bind(providerError.message, trxId).run()
       
-    throw new Error('PROVIDER_FAILED')
+    throw new Error(providerError.message || 'PROVIDER_FAILED')
   }
 }
 
@@ -83,7 +83,7 @@ export async function createPostpaidInquiry(
   idempotencyKey: string
 ) {
   const query = `
-    SELECT p.price, p.order_type, p.status, p.provider_product_code,
+    SELECT p.price, p.order_type, p.status, p.name, p.category_id, p.provider_product_code,
            pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret 
     FROM products p
     JOIN providers pr ON p.provider_id = pr.id
@@ -92,10 +92,12 @@ export async function createPostpaidInquiry(
   const product = await db.prepare(query).bind(productId).first()
   
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
-  if (product.order_type !== 'postpaid') throw new Error('INVALID_ORDER_TYPE')
+  // PERBAIKAN: Kini menerima order_type inquiry
+  if (product.order_type !== 'inquiry') throw new Error('INVALID_ORDER_TYPE')
 
   const trxId = crypto.randomUUID()
 
+  // 1. Eksekusi Request Cek ke Provider menggunakan kode INQ / Cek
   const inquiryResult = await dispatchProviderOrder(
     product.provider_name as string,
     'inquiry',
@@ -110,15 +112,44 @@ export async function createPostpaidInquiry(
   )
 
   const billAmount = inquiryResult.bill_amount
-  const adminMarkup = product.price as number
+
+  // 2. LOGIKA PENCARI PASANGAN (SIBLING MATCHER) SAKTI
+  // Mencari produk Bayar (Postpaid) di dalam sub-kategori/brand yang sama
+  const siblingQuery = `SELECT id, price, provider_product_code, name FROM products WHERE category_id = ? AND order_type = 'postpaid' AND status = 'active'`
+  const { results: postpaids } = await db.prepare(siblingQuery).bind(product.category_id).all()
+  
+  const inqCode = (product.provider_product_code as string).toUpperCase()
+  let siblingPostpaid = null
+
+  // Strategi A: Replace Prefix Standar (INQ -> PAY)
+  if (inqCode.startsWith('INQ')) {
+    const targetCode = inqCode.replace(/^INQ/, 'PAY')
+    siblingPostpaid = postpaids.find((p: any) => p.provider_product_code.toUpperCase() === targetCode)
+  } 
+  // Strategi B: Pengecualian Khusus PLN (CPLA -> BPLA)
+  else if (inqCode === 'CPLA') {
+    siblingPostpaid = postpaids.find((p: any) => p.provider_product_code.toUpperCase() === 'BPLA')
+  } 
+  // Strategi C: Jika prefix unik, samakan dari nama produk (Cek -> Bayar)
+  if (!siblingPostpaid) {
+    const expectedName = (product.name as string).replace(/^Cek /i, 'Bayar ').toLowerCase()
+    siblingPostpaid = postpaids.find((p: any) => (p.name as string).toLowerCase() === expectedName)
+  }
+
+  // Jika tetap tidak ketemu pasangannya, batalkan transaksi agar user tidak rugi
+  if (!siblingPostpaid) throw new Error('PASANGAN_PRODUK_BAYAR_TIDAK_DITEMUKAN')
+
+  // 3. Gunakan harga dari Produk Bayar (Komisi + Margin) untuk kalkulasi Total
+  const adminMarkup = siblingPostpaid.price as number
   const totalPrice = billAmount + adminMarkup
 
+  // 4. INSERT KE TRANSAKSI MENGGUNAKAN ID PRODUK BAYAR (Agar nanti saat dilunasi, terbaca kode SKU Bayar-nya)
   const insertTrx = `
     INSERT INTO transactions (id, user_id, product_id, customer_number, order_type, bill_amount, admin_markup, total_price, status, provider_response, idempotency_key)
     VALUES (?, ?, ?, ?, 'postpaid', ?, ?, ?, 'waiting_payment', ?, ?)
   `
   await db.prepare(insertTrx).bind(
-    trxId, userId, productId, customerNumber, billAmount, adminMarkup, totalPrice, JSON.stringify(inquiryResult.raw_response), idempotencyKey
+    trxId, userId, siblingPostpaid.id, customerNumber, billAmount, adminMarkup, totalPrice, JSON.stringify(inquiryResult.raw_response), idempotencyKey
   ).run()
 
   return { 
@@ -180,6 +211,6 @@ export async function payPostpaidBill(
     await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
       .bind(providerError.message, trxId).run()
       
-    throw new Error('PROVIDER_FAILED')
+    throw new Error(providerError.message || 'PROVIDER_FAILED')
   }
 }
