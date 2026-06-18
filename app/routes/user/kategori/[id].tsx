@@ -1,91 +1,173 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  const paramId = c.req.param('id')
-  const categoryId = Number(paramId)
+  const categoryId = c.req.param('id')
+  let activeSubId = c.req.query('sub') || ''
 
-  if (isNaN(categoryId)) {
-     return c.render(
-        <div class="max-w-2xl mx-auto p-10 text-center">
-          <h1 class="text-2xl font-bold text-slate-100">Format Brand Tidak Valid</h1>
-        </div>,
-        { title: 'Error' }
-     )
-  }
+  // 1. Ambil informasi detail mengenai kategori saat ini yang sedang dibuka
+  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(categoryId).first()
 
-  // Mengambil nama dan GAMBAR dari Kategori/Brand
-  const category = await c.env.DB.prepare(`SELECT name, image_url FROM categories WHERE id = ?`).bind(categoryId).first()
-  
   if (!category) {
     return c.render(
-      <div class="max-w-2xl mx-auto p-10 text-center mt-12 bg-[#18181b] border border-slate-800/60 rounded-2xl shadow-xl">
-         <div class="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
-           <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-         </div>
-         <h1 class="text-xl font-bold text-slate-100 mb-2">Brand Tidak Ditemukan</h1>
-         <p class="text-sm text-slate-400 mb-6">Brand dengan ID #{paramId} tidak tersedia di sistem.</p>
-         <a href="/user/dashboard" class="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-xl transition-colors">Kembali ke Dashboard</a>
+      <div class="max-w-md mx-auto text-center py-12 bg-[#18181b] border border-slate-800 rounded-2xl my-8 p-6">
+        <h2 class="text-lg font-bold text-slate-200 mb-2">Kategori Tidak Ditemukan</h2>
+        <p class="text-sm text-slate-400 mb-4">Maaf, layanan yang Anda cari tidak tersedia.</p>
+        <a href="/user/dashboard" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl transition-all">Kembali ke Dashboard</a>
       </div>,
-      { title: 'Brand Tidak Ditemukan' }
+      { title: 'Tidak Ditemukan' }
     )
   }
 
-  const { results: products } = await c.env.DB.prepare(`SELECT id, name, price, order_type FROM products WHERE category_id = ? AND status = 'active' ORDER BY price ASC`).bind(categoryId).all()
+  let subCategories: any[] = []
+  let products: any[] = []
+  let pageTitle = category.name
 
-  // Gambar Default jika Brand belum dipasang gambar oleh Admin
-  const defaultIcon = "https://ui-avatars.com/api/?name=" + encodeURIComponent(category.name as string) + "&background=0D8BFF&color=fff&rounded=true&bold=true";
-  const brandImage = category.image_url || defaultIcon;
+  // 2. LOGIKA HIERARKI PINTAR: Periksa apakah kategori ini adalah Induk Utama (parent_id IS NULL)
+  if (category.parent_id === null) {
+    // Tarik semua sub-kategori / brand anak yang beraliansi dengan induk ini
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, name, image_url FROM categories WHERE parent_id = ? AND type = 'product' ORDER BY name ASC`
+    ).bind(categoryId).all()
+    subCategories = results || []
+
+    if (subCategories.length > 0) {
+      // Jika tidak ada sub-kategori aktif terpilih di parameter URL, default ke sub-kategori pertama
+      if (!activeSubId) {
+        activeSubId = subCategories[0].id.toString()
+      }
+      
+      // Ambil judul dari sub-kategori aktif untuk memperkaya konteks halaman
+      const currentActiveSub = subCategories.find(s => s.id.toString() === activeSubId)
+      if (currentActiveSub) pageTitle = `${category.name} - ${currentActiveSub.name}`
+
+      // Tarik produk yang masuk dalam sub-kategori aktif tersebut
+      const { results: prodResults } = await c.env.DB.prepare(
+        `SELECT p.*, pr.name as provider_name 
+         FROM products p
+         LEFT JOIN providers pr ON p.provider_id = pr.id
+         WHERE p.category_id = ? AND p.status = 'active'
+         ORDER BY p.price ASC`
+      ).bind(activeSubId).all()
+      products = prodResults || []
+    }
+  } else {
+    // JIKA YANG DIBUKA ADALAH SUB-KATEGORI LANGSUNG
+    activeSubId = categoryId
+    
+    // Ambil semua saudara kandungnya (sub-kategori lain di bawah induk yang sama) agar menu tab navigasi tetap muncul
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, name, image_url FROM categories WHERE parent_id = ? AND type = 'product' ORDER BY name ASC`
+    ).bind(category.parent_id).all()
+    subCategories = results || []
+
+    const parentCat = await c.env.DB.prepare(`SELECT name FROM categories WHERE id = ?`).bind(category.parent_id).first()
+    if (parentCat) pageTitle = `${parentCat.name} - ${category.name}`
+
+    // Tarik langsung produk dari kategori ini
+    const { results: prodResults } = await c.env.DB.prepare(
+      `SELECT p.*, pr.name as provider_name 
+       FROM products p
+       LEFT JOIN providers pr ON p.provider_id = pr.id
+       WHERE p.category_id = ? AND p.status = 'active'
+       ORDER BY p.price ASC`
+    ).bind(categoryId).all()
+    products = prodResults || []
+  }
 
   return c.render(
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-7xl mx-auto space-y-6">
       
-      <div class="mb-6 flex items-center gap-4 border-b border-slate-800/60 pb-5">
-        <a href="/user/dashboard" class="p-2.5 bg-[#18181b] border border-slate-800/60 rounded-xl text-slate-400 hover:text-white transition-colors">
-          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
+      {/* TOMBOL KEMBALI & HEADER */}
+      <div class="flex items-center gap-4 mb-2">
+        <a href="/user/dashboard" class="p-2.5 bg-[#18181b] border border-slate-800/60 rounded-xl text-slate-400 hover:text-white transition-colors shadow-sm">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
         </a>
-        <div class="flex items-center gap-4">
-          <img src={brandImage as string} alt={category.name as string} class="w-12 h-12 rounded-full object-contain bg-white shadow-lg p-1 border border-slate-800" />
-          <div>
-            <h1 class="text-2xl font-bold text-slate-100 tracking-tight">{category.name}</h1>
-            <p class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold mt-0.5">Pilih Produk Untuk Melanjutkan</p>
-          </div>
+        <div>
+          <h1 class="text-xl font-bold text-slate-100">{category.parent_id === null ? category.name : 'Pilihan Layanan'}</h1>
+          <p class="text-xs text-slate-400">Silakan pilih variasi brand dan tentukan nominal produk.</p>
         </div>
       </div>
 
-      {products.length > 0 ? (
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
-          {products.map((p: any) => (
-            <a href={`/user/order/${p.id}`} class="bg-[#18181b] border border-slate-800/60 p-5 rounded-2xl flex flex-col h-full hover:border-emerald-500/50 hover:bg-[#1a1a1f] transition-all group shadow-sm hover:shadow-emerald-500/5 cursor-pointer relative overflow-hidden">
-              
-              {/* Badge Tipe */}
-              <div class="absolute top-0 right-0 bg-slate-800/50 px-3 py-1 rounded-bl-xl text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-l border-slate-800/60">
-                 {p.order_type === 'prepaid' ? 'Topup' : 'Tagihan'}
-              </div>
+      {/* TABS SUB-KATEGORI / BRAND (MOBILE-FRIENDLY RESPONSIVE HORIZONTAL SCROLL) */}
+      {subCategories.length > 0 && (
+        <div class="bg-[#18181b] border border-slate-800/60 p-3 rounded-2xl shadow-sm">
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0 scroll-smooth snap-x">
+            {subCategories.map((sub: any) => {
+              const isSelected = sub.id.toString() === activeSubId
+              // Jika kategori yang dibuka adalah induk utama, link tab mengarah ke diri sendiri dengan query string '?sub='
+              // Jika yang dibuka adalah sub-kategori, link tab berpindah langsung ke route ID sub-kategori tersebut
+              const targetUrl = category.parent_id === null 
+                ? `/user/kategori/${category.id}?sub=${sub.id}`
+                : `/user/kategori/${sub.id}`
 
-              <div class="flex items-start gap-4 mb-4 mt-2">
-                <img src={brandImage as string} alt="Brand" class="w-10 h-10 rounded-lg object-contain bg-white/10 p-1 shrink-0" />
-                <h3 class="text-sm font-semibold text-slate-200 leading-snug group-hover:text-emerald-400 transition-colors">{p.name}</h3>
-              </div>
-              
-              <div class="mt-auto pt-4 border-t border-slate-800/60 flex items-center justify-between">
-                <div>
-                   <p class="text-[10px] text-slate-500 font-medium mb-0.5">Harga Sistem</p>
-                   <span class="text-emerald-400 font-black text-lg tracking-tight">Rp {p.price.toLocaleString('id-ID')}</span>
-                </div>
-                <div class="w-8 h-8 rounded-full bg-[#121217] border border-slate-700 flex items-center justify-center group-hover:bg-emerald-500 group-hover:border-emerald-500 group-hover:text-white text-slate-500 transition-colors">
-                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
-                </div>
-              </div>
-            </a>
-          ))}
-        </div>
-      ) : (
-        <div class="text-center py-24 bg-[#18181b] border border-slate-800/60 rounded-2xl shadow-xl">
-          <svg width="48" height="48" class="mx-auto text-slate-700 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
-          <p class="text-slate-400 font-medium">Belum ada produk aktif di Brand ini.</p>
+              return (
+                <a href={targetUrl} class={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all shrink-0 snap-align-start border ${isSelected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm' : 'bg-[#121217] text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'}`}>
+                  {sub.image_url && (
+                    <div class="w-5 h-5 rounded-md bg-white overflow-hidden p-0.5 shrink-0 flex items-center justify-center">
+                      <img src={sub.image_url} alt={sub.name} class="w-full h-full object-contain" />
+                    </div>
+                  )}
+                  <span>{sub.name}</span>
+                </a>
+              )
+            })}
+          </div>
         </div>
       )}
+
+      {/* KATALOG DAFTAR PRODUK */}
+      <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl overflow-hidden shadow-sm">
+        <div class="p-4 border-b border-slate-800/60 bg-slate-900/20">
+          <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wide">Daftar Variasi Nominal</h3>
+        </div>
+        
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-900/40 text-xs uppercase font-semibold text-slate-500 border-b border-slate-800/60 whitespace-nowrap">
+              <tr>
+                <th class="px-6 py-4.5">Nama Produk / Layanan</th>
+                <th class="px-6 py-4.5 text-center">Jenis</th>
+                <th class="px-6 py-4.5 text-right">Harga Satuan</th>
+                <th class="px-6 py-4.5 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/50">
+              {products.length > 0 ? products.map((prod: any) => (
+                <tr class="hover:bg-slate-800/20 transition-colors group">
+                  <td class="px-6 py-4.5">
+                    <span class="font-semibold text-slate-200 block group-hover:text-emerald-400 transition-colors">{prod.name}</span>
+                    <span class="text-[10px] text-slate-500 font-mono mt-0.5 block uppercase tracking-wider">{prod.provider_product_code}</span>
+                  </td>
+                  <td class="px-6 py-4.5 text-center whitespace-nowrap">
+                    <span class={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${prod.order_type === 'postpaid' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                      {prod.order_type}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4.5 text-right font-bold text-slate-100 whitespace-nowrap text-base">
+                    Rp {prod.price.toLocaleString('id-ID')}
+                  </td>
+                  <td class="px-6 py-4.5 text-center whitespace-nowrap">
+                    <a href={`/user/order/new?product_id=${prod.id}`} class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all inline-block shadow-md shadow-emerald-600/10 hover:shadow-emerald-500/20">
+                      Beli Sekarang
+                    </a>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} class="px-6 py-16 text-center text-slate-500 text-xs">
+                    <div class="flex flex-col items-center justify-center space-y-2 opacity-60">
+                      <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                      <p>Belum ada produk aktif yang tersedia untuk sub-kategori ini.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>,
-    { title: `Brand: ${category.name}` }
+    { title: pageTitle }
   )
 })
