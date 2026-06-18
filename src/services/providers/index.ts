@@ -17,35 +17,54 @@ export const safeProviderFetch = async (
     let fetchUrl = customTargetUrl || creds.endpoint;
     let finalPayload = payload;
     
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-    };
+    const headers: Record<string, string> = {};
 
+    // 1. UBAH STRATEGI: Jika metode aslinya GET tapi punya URL Params, 
+    // ubah menjadi POST Form-UrlEncoded agar lolos dari blokir CodeIgniter.
+    if (method === 'GET' && customTargetUrl && customTargetUrl.includes('?')) {
+        const [baseUrl, queryStr] = customTargetUrl.split('?');
+        fetchUrl = baseUrl; // Kembalikan ke Base URL (Tanpa '?')
+        
+        // Ubah format data menjadi Form-UrlEncoded murni
+        headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        finalPayload = queryStr; // Isi Body dengan data Query String (Contoh: product=XXX&dest=YYY)
+        method = 'POST'; // Paksa proxy / fetch agar mengirim sebagai POST
+    } else {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    // 2. SKEMA PROXY (Jika digunakan)
+    let requestBody: any;
     if (creds.proxy_url) {
         fetchUrl = creds.proxy_url;
         headers['x-relay-auth'] = 'BantarCaringin1'; 
+        headers['Content-Type'] = 'application/json'; // Request ke Proxy selalu JSON
         
-        finalPayload = {
-            target_url: customTargetUrl || creds.endpoint,
-            target_method: method, // Bisa GET atau POST
+        requestBody = JSON.stringify({
+            target_url: fetchUrl === creds.proxy_url ? (customTargetUrl && !customTargetUrl.includes('?') ? customTargetUrl : creds.endpoint) : fetchUrl,
+            target_method: method, // Akan menjadi POST
             target_headers: {
                 'Accept': 'application/json, text/plain, */*',
+                'Content-Type': method === 'POST' && typeof finalPayload === 'string' ? 'application/x-www-form-urlencoded' : 'application/json',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            target_payload: payload
-        };
+            target_payload: finalPayload // Berisi string URL Encoded
+        });
+    } else {
+         requestBody = typeof finalPayload === 'string' ? finalPayload : JSON.stringify(finalPayload);
     }
 
     console.log("\n[DEBUG] ====== OUTGOING REQUEST TO PROVIDER ======");
-    console.log("[DEBUG] Target URL:", customTargetUrl || creds.endpoint);
-    console.log("[DEBUG] Payload   :", JSON.stringify(finalPayload));
+    console.log("[DEBUG] Target URL:", fetchUrl);
+    console.log("[DEBUG] Method    :", method);
+    console.log("[DEBUG] Body      :", requestBody);
     console.log("[DEBUG] ==========================================\n");
 
     try {
         const response = await fetch(fetchUrl, {
-            method: 'POST', // Ke proxy selalu POST, proxy yang akan mengeksekusi metode aslinya
+            method: creds.proxy_url ? 'POST' : method,
             headers,
-            body: JSON.stringify(finalPayload)
+            body: requestBody
         });
 
         const contentType = response.headers.get('content-type') || '';
@@ -59,9 +78,6 @@ export const safeProviderFetch = async (
 
         let data;
         
-        // PERBAIKAN SAKTI: 
-        // Banyak API H2H Otomax membalas pakai XML atau Plain Text (contoh: STATUS=00|SN=123).
-        // Kita bungkus respon mentahnya ke JSON jika tidak bisa di-parse agar sistem transaksi tidak crash!
         if (contentType.includes('application/json')) {
             try {
                 data = JSON.parse(textResponse);
