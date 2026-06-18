@@ -15,54 +15,43 @@ export const safeProviderFetch = async (
     customTargetUrl?: string
 ) => {
     let fetchUrl = customTargetUrl || creds.endpoint;
-    let finalPayload = payload;
     
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+    };
 
-    // 1. UBAH STRATEGI: Jika metode aslinya GET tapi punya URL Params, 
-    // ubah menjadi POST Form-UrlEncoded agar lolos dari blokir CodeIgniter.
-    if (method === 'GET' && customTargetUrl && customTargetUrl.includes('?')) {
-        const [baseUrl, queryStr] = customTargetUrl.split('?');
-        fetchUrl = baseUrl; // Kembalikan ke Base URL (Tanpa '?')
-        
-        // Ubah format data menjadi Form-UrlEncoded murni
-        headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        finalPayload = queryStr; // Isi Body dengan data Query String (Contoh: product=XXX&dest=YYY)
-        method = 'POST'; // Paksa proxy / fetch agar mengirim sebagai POST
-    } else {
-        headers['Content-Type'] = 'application/json';
-    }
-
-    // 2. SKEMA PROXY (Jika digunakan)
     let requestBody: any;
+
     if (creds.proxy_url) {
+        // Jika pakai Proxy, tembak ke URL Proxy
         fetchUrl = creds.proxy_url;
         headers['x-relay-auth'] = 'BantarCaringin1'; 
-        headers['Content-Type'] = 'application/json'; // Request ke Proxy selalu JSON
         
+        // BUNGKUS PAYLOAD UNTUK PROXY
         requestBody = JSON.stringify({
-            target_url: fetchUrl === creds.proxy_url ? (customTargetUrl && !customTargetUrl.includes('?') ? customTargetUrl : creds.endpoint) : fetchUrl,
-            target_method: method, // Akan menjadi POST
+            target_url: customTargetUrl || creds.endpoint,
+            target_method: method, // TETAPKAN GET! (Jangan diubah paksa ke POST)
             target_headers: {
                 'Accept': 'application/json, text/plain, */*',
-                'Content-Type': method === 'POST' && typeof finalPayload === 'string' ? 'application/x-www-form-urlencoded' : 'application/json',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            target_payload: finalPayload // Berisi string URL Encoded
+            // PERBAIKAN FATAL: Jika method GET, payload WAJIB null (Sama seperti tes PHP)
+            target_payload: method === 'GET' ? null : payload 
         });
     } else {
-         requestBody = typeof finalPayload === 'string' ? finalPayload : JSON.stringify(finalPayload);
+        // Jika tidak pakai proxy (Walaupun seharusnya pakai)
+        requestBody = method === 'GET' ? undefined : (typeof payload === 'string' ? payload : JSON.stringify(payload));
     }
 
     console.log("\n[DEBUG] ====== OUTGOING REQUEST TO PROVIDER ======");
-    console.log("[DEBUG] Target URL:", fetchUrl);
+    console.log("[DEBUG] Target URL:", customTargetUrl || creds.endpoint);
     console.log("[DEBUG] Method    :", method);
     console.log("[DEBUG] Body      :", requestBody);
     console.log("[DEBUG] ==========================================\n");
 
     try {
         const response = await fetch(fetchUrl, {
-            method: creds.proxy_url ? 'POST' : method,
+            method: creds.proxy_url ? 'POST' : method, // Perintah ke render proxy-nya sendiri selalu POST
             headers,
             body: requestBody
         });
