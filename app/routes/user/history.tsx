@@ -51,6 +51,8 @@ export default createRoute(async (c) => {
                 <th class="px-4 py-4 w-32">Nominal</th>
                 <th class="px-4 py-4 w-28 text-center">Status</th>
                 <th class="px-4 py-4">Keterangan / Server Log</th>
+                {/* 🟢 TAMBAHAN: Kolom Aksi untuk Struk */}
+                <th class="px-4 py-4 w-28 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/50">
@@ -109,11 +111,21 @@ export default createRoute(async (c) => {
                         </form>
                       )}
                     </td>
+
+                    {/* 🟢 TAMBAHAN: Tombol untuk membuka halaman struk */}
+                    <td class="px-4 py-4 text-center whitespace-nowrap">
+                      <a href={`/user/receipt/${trx.id}`} class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/10 hover:bg-blue-600 text-blue-500 hover:text-white border border-blue-600/20 hover:border-blue-600 text-[11px] font-bold rounded-lg transition-all">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        Struk
+                      </a>
+                    </td>
+
                   </tr>
                 )
               }) : (
                 <tr>
-                  <td colSpan={5} class="px-4 py-12 text-center text-slate-500 text-sm">
+                  {/* 🟢 PERBAIKAN: colSpan diubah jadi 6 karena kita menambah 1 kolom baru */}
+                  <td colSpan={6} class="px-4 py-12 text-center text-slate-500 text-sm">
                     Belum ada riwayat transaksi.
                   </td>
                 </tr>
