@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { getCookie } from 'hono/cookie'
-import { uploadToCloudinary } from '../../services/cloudinary'
+
+// PERBAIKAN MUTLAK: Path wajib mundur 3 level (../../../)
+import { uploadToCloudinary } from '../../../services/cloudinary'
 
 const app = new Hono()
 
@@ -88,7 +90,6 @@ app.post('/categories/create', async (c) => {
   }
 })
 
-// BARU: ENDPOINT EDIT KATEGORI UNTUK MENGGANTI GAMBAR
 app.post('/categories/:id/update', async (c) => {
   const id = c.req.param('id')
   const body = await c.req.parseBody({ all: true })
@@ -102,7 +103,6 @@ app.post('/categories/:id/update', async (c) => {
 
   try {
     if (imageFile && imageFile.size > 0) {
-      // Jika Admin Mengunggah Gambar Baru
       const imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
       
       await c.env.DB.prepare(`
@@ -111,7 +111,6 @@ app.post('/categories/:id/update', async (c) => {
         WHERE id = ?
       `).bind(parentId, name, slug, type, imageUrl, id).run()
     } else {
-      // Jika Admin Membiarkan Gambar Kosong (Hanya Update Teks)
       await c.env.DB.prepare(`
         UPDATE categories 
         SET parent_id = ?, name = ?, slug = ?, type = ? 
@@ -267,7 +266,7 @@ app.post('/gateways/create', async (c) => {
 })
 
 // ========================================================================
-// 9. BATCH SYNC PRODUK JSON (OKECONNECT & H2H) - LOGIKA ENTERPRISE
+// 9. BATCH SYNC PRODUK JSON (OKECONNECT & H2H)
 // ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
