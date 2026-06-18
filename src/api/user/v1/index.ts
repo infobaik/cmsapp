@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getCookie, deleteCookie } from 'hono/cookie'
-import { processPrepaidOrder } from '../../../services/transaction'
+import { processPrepaidOrder, createPostpaidInquiry, payPostpaidBill } from '../../../services/transaction'
 
 const app = new Hono()
 
@@ -60,29 +60,57 @@ app.post('/wallet/deposit', async (c) => {
   }
 })
 
+// PERBAIKAN: Router cerdas pemisah Jalur Prepaid dan Jalur Inquiry
 app.post('/order/create', async (c) => {
+  let pid = ''
   try {
     const userId = c.get('ui_user_id')
     const body = await c.req.parseBody()
     
     const productId = Number(body.product_id)
+    pid = String(productId)
     const customerNumber = body.customer_number as string
     const idempotencyKey = crypto.randomUUID() 
 
-    await processPrepaidOrder(c.env.DB, userId, productId, customerNumber, idempotencyKey)
-    return c.redirect('/user/history?success=transaksi_berhasil')
+    // Cek tipe order dari database terlebih dahulu
+    const product = await c.env.DB.prepare(`SELECT order_type FROM products WHERE id = ?`).bind(productId).first()
+    if (!product) throw new Error('PRODUCT_NOT_FOUND')
+
+    if (product.order_type === 'prepaid') {
+      await processPrepaidOrder(c.env.DB, userId, productId, customerNumber, idempotencyKey)
+      return c.redirect('/user/history?success=transaksi_berhasil')
+      
+    } else if (product.order_type === 'inquiry') {
+      await createPostpaidInquiry(c.env.DB, userId, productId, customerNumber, idempotencyKey)
+      return c.redirect('/user/history?success=cek_tagihan_berhasil_silakan_bayar')
+      
+    } else {
+      throw new Error('INVALID_ORDER_TYPE')
+    }
 
   } catch (error: any) {
-    let pid = ''
-    try {
-      const b = await c.req.parseBody()
-      pid = String(b.product_id)
-    } catch(e) {}
-
     if (error.message === 'INSUFFICIENT_BALANCE') {
       return c.redirect(`/user/order/${pid}?error=saldo_kurang`)
     }
-    return c.redirect(`/user/order/${pid}?error=system_error`)
+    // PERBAIKAN: Melemparkan eror asli agar ketahuan jika provider yang bermasalah (bukan sekedar system_error)
+    return c.redirect(`/user/order/${pid}?error=${encodeURIComponent(error.message)}`)
+  }
+})
+
+// TAMBAHAN BARU: Endpoint untuk mengeksekusi pembayaran tagihan pascabayar dari halaman Riwayat (History)
+app.post('/order/pay', async (c) => {
+  try {
+    const userId = c.get('ui_user_id')
+    const body = await c.req.parseBody()
+    const trxId = body.trx_id as string
+
+    await payPostpaidBill(c.env.DB, userId, trxId)
+    return c.redirect('/user/history?success=pembayaran_tagihan_berhasil')
+  } catch (error: any) {
+    if (error.message === 'INSUFFICIENT_BALANCE') {
+      return c.redirect(`/user/history?error=saldo_kurang`)
+    }
+    return c.redirect(`/user/history?error=${encodeURIComponent(error.message)}`)
   }
 })
 
