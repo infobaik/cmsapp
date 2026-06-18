@@ -60,6 +60,17 @@ export default createRoute(async (c) => {
                 const dateStr = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
                 const timeStr = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+                // ==========================================
+                // 🧹 LOGIC FILTERING: MEMBUANG INFO SALDO
+                // ==========================================
+                let cleanLog = trx.server_log || '-';
+                
+                if (cleanLog !== '-') {
+                  // Regex ini akan mendeteksi kata "Saldo" beserta semua angka/teks di belakangnya 
+                  // dan membuangnya. Jika sebelumnya ada titik banyak (..), akan dirapikan jadi satu titik.
+                  cleanLog = cleanLog.replace(/[\.\s,]*Saldo\s.*$/i, '.').trim();
+                }
+
                 return (
                   <tr class="hover:bg-slate-800/10 transition-colors">
                     <td class="px-4 py-4 whitespace-nowrap">
@@ -85,7 +96,8 @@ export default createRoute(async (c) => {
                     </td>
                     <td class="px-4 py-4 text-xs text-slate-400">
                       <div class="bg-[#121217] p-2 rounded border border-slate-800/60 font-mono text-[11px] whitespace-pre-wrap break-words max-w-md">
-                        {trx.server_log || '-'}
+                        {/* TAMPILKAN LOG YANG SUDAH DIBERSIHKAN */}
+                        {cleanLog}
                       </div>
 
                       {trx.status === 'waiting_payment' && (
