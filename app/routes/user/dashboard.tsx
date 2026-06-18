@@ -5,8 +5,10 @@ export default createRoute(async (c) => {
   const user = c.get('user')!
   const wallet = await getUserWallet(c.env.DB, user.id) || { balance_available: 0, balance_pending: 0 }
 
-  // Query diperbarui: menambahkan image_url agar logo kategori bisa ditarik
-  const { results: categories } = await c.env.DB.prepare(`SELECT id, name, slug, image_url FROM categories WHERE type = 'product' ORDER BY name ASC`).all()
+  // Hanya mengambil kategori induk tingkat tertinggi (parent_id IS NULL)
+  const { results: categories } = await c.env.DB.prepare(
+    `SELECT id, name, slug, image_url FROM categories WHERE type = 'product' AND parent_id IS NULL ORDER BY name ASC`
+  ).all()
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-8">
@@ -42,8 +44,7 @@ export default createRoute(async (c) => {
           <h2 class="text-3xl font-bold text-white tracking-tight">Rp {wallet.balance_pending.toLocaleString('id-ID')}</h2>
           <div class="mt-4 flex items-center gap-2 text-xs font-medium">
              <span class="text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded flex items-center gap-1">
-               <svg width="12" height="12" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Pending
-             </span>
+               <svg width="12" height="12" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></span >
              <span class="text-slate-500">Menunggu validasi sistem</span>
           </div>
         </div>
@@ -64,23 +65,27 @@ export default createRoute(async (c) => {
         </div>
       </div>
 
-      {/* THUMBNAIL KATEGORI PRODUK */}
+      {/* THUMBNAIL KATEGORI PRODUK INDUK */}
       <div>
         <h2 class="text-lg font-bold text-slate-100 mb-4 border-b border-slate-800/60 pb-2">Katalog Layanan</h2>
         <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
           {categories.map((cat: any) => (
             <a href={`/user/kategori/${cat.id}`} class="flex flex-col items-center justify-center p-4 bg-[#18181b] border border-slate-800/60 hover:border-emerald-500/50 rounded-2xl transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/10 group">
               
-              {/* Modifikasi pada wadah icon dengan menambahkan 'overflow-hidden' */}
+              {/* Wadah pembungkus lingkaran utama */}
               <div class="w-12 h-12 rounded-full bg-[#121217] flex items-center justify-center mb-3 group-hover:bg-emerald-500/20 text-slate-400 group-hover:text-emerald-400 transition-colors overflow-hidden">
                 
-                {/* Penerapan ternary condition (Fallback Icon) */}
+                {/* PERBAIKAN: Menggunakan object-cover dan menghapus padding (p-2) agar gambar memenuhi seluruh lingkaran secara penuh */}
                 {cat.image_url ? (
-                  <img src={cat.image_url} alt={cat.name} class="w-full h-full object-contain p-2" loading="lazy" />
+                  <img 
+                    src={cat.image_url} 
+                    alt={cat.name} 
+                    class="w-full h-full object-cover" 
+                    loading="lazy" 
+                  />
                 ) : (
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .415.336.75.75.75z" /></svg>
                 )}
-
               </div>
               <span class="text-xs font-semibold text-slate-300 text-center">{cat.name}</span>
             </a>
