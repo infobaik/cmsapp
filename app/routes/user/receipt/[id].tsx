@@ -3,13 +3,12 @@ import { createRoute } from 'honox/factory'
 export default createRoute(async (c) => {
   const trxId = c.req.param('id')
   
-  // PERBAIKAN MUTLAK: Memanggil data user persis seperti di history.tsx Anda!
   const user: any = c.get('user')
   if (!user || !user.id) return c.redirect('/login')
   
   const userId = user.id
 
-  // Mengambil detail transaksi secara lengkap (join dengan products, categories, dan users)
+  // Mengambil detail transaksi secara lengkap
   const query = `
     SELECT 
       t.*, 
@@ -39,12 +38,23 @@ export default createRoute(async (c) => {
      )
   }
 
-  // Tentukan Status untuk Struk
+  // Tentukan Status
   let statusText = 'DIPROSES'
   let statusColor = 'text-blue-500'
   if (trx.status === 'success') { statusText = 'BERHASIL'; statusColor = 'text-emerald-500' }
   else if (trx.status === 'failed') { statusText = 'GAGAL'; statusColor = 'text-red-500' }
   else if (trx.status === 'waiting_payment') { statusText = 'MENUNGGU PEMBAYARAN'; statusColor = 'text-amber-500' }
+
+  // ========================================================================
+  // 🧹 PERBAIKAN MUTLAK: FILTER SALDO PADA PROVIDER_RESPONSE / SN
+  // ========================================================================
+  let cleanSN = (trx.provider_response as string) || '';
+  if (cleanSN && cleanSN !== '-') {
+     // Persis seperti di history.tsx Anda! Menghapus kata "Saldo" ke belakang.
+     cleanSN = cleanSN.replace(/[\.\s,]*Saldo\s.*$/i, '.').trim();
+     // Merapikan titik berlebih jika ada
+     cleanSN = cleanSN.replace(/\.+$/, '').trim(); 
+  }
 
   return c.render(
     <div class="max-w-2xl mx-auto pb-10">
@@ -69,7 +79,6 @@ export default createRoute(async (c) => {
       {/* AREA STRUK */}
       <div id="receipt-area" class="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm mx-auto text-slate-800 relative">
          
-         {/* Aksen atas struk */}
          <div class="h-2 w-full bg-blue-600"></div>
          
          <div class="p-6 md:p-8">
@@ -112,11 +121,11 @@ export default createRoute(async (c) => {
                </div>
             </div>
 
-            {/* Serial Number (Hanya tampil jika sukses & ada SN) */}
-            {trx.provider_response && trx.status === 'success' && (
+            {/* Serial Number yang sudah BERSIH dari info SALDO */}
+            {cleanSN && trx.status === 'success' && (
               <div class="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
                  <p class="text-[10px] text-slate-500 font-bold uppercase mb-1">Serial Number (SN) / Token</p>
-                 <p class="text-sm font-mono font-bold text-slate-800 break-all">{trx.provider_response}</p>
+                 <p class="text-sm font-mono font-bold text-slate-800 break-all">{cleanSN}</p>
               </div>
             )}
 
@@ -149,7 +158,6 @@ export default createRoute(async (c) => {
          </button>
       </div>
 
-      {/* SCRIPT CLIENT-SIDE UNTUK FUNGSI SHARE DAN DOWNLOAD */}
       <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
       <script dangerouslySetInnerHTML={{
          __html: `
