@@ -1,39 +1,32 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // 1. Ambil parameter filter dari URL query string
+  // 1. Ambil parameter filter pencarian dari URL query string
   const search = c.req.query('search') || ''
-  const filterType = c.req.query('type') || ''
 
-  // 2. Tarik semua data kategori dari DB D1 secara efisien
-  const query = `SELECT id, parent_id, name, type, image_url FROM categories ORDER BY type, name`
+  // 2. Tarik semua data kategori dari DB D1 secara efisien (Tanpa kolom type)
+  const query = `SELECT id, parent_id, name, image_url FROM categories ORDER BY name ASC`
   const { results: categories } = await c.env.DB.prepare(query).all()
 
-  // 3. AMAN: Form "Tambah Baru" tetap memakai relasi induk utuh agar admin selalu bisa memilih parent kategori manapun
+  // 3. Form "Tambah Baru" memakai relasi induk utama untuk menentukan brand di bawah kategori induk
   const parentsForForm = categories.filter((cat: any) => cat.parent_id === null)
 
-  // 4. Logika pemfilteran hierarki pintar agar relasi pohon (parent-child) tidak rusak saat dicari
+  // 4. Logika pencarian hierarki agar tidak merusak pohon relasi data
   let filteredCategories = [...categories]
-
-  if (filterType) {
-    filteredCategories = filteredCategories.filter((cat: any) => cat.type === filterType)
-  }
 
   if (search) {
     const searchLower = search.toLowerCase()
     const matchingIds = new Set<number>()
 
-    // Ambil ID kategori yang namanya cocok
     categories.forEach((cat: any) => {
       if (cat.name.toLowerCase().includes(searchLower)) {
         matchingIds.add(cat.id)
         if (cat.parent_id !== null) {
-          matchingIds.add(cat.parent_id) // Pastikan induknya ikut masuk agar pohon struktur tidak patah
+          matchingIds.add(cat.parent_id)
         }
       }
     })
 
-    // Jika nama induknya yang cocok, otomatis masukkan anak-anak di bawahnya agar informatif
     categories.forEach((cat: any) => {
       if (cat.parent_id !== null && matchingIds.has(cat.parent_id)) {
         matchingIds.add(cat.id)
@@ -43,20 +36,33 @@ export default createRoute(async (c) => {
     filteredCategories = filteredCategories.filter((cat: any) => matchingIds.has(cat.id))
   }
 
-  // Pisahkan entitas parent yang lolos filter pencarian untuk perulangan UI utama
   const displayParents = filteredCategories.filter((cat: any) => cat.parent_id === null)
+
+  const successMsg = c.req.query('success')
+  const errorMsg = c.req.query('error')
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-6">
       
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-slate-100">Kategori & Brand</h1>
-        <p class="text-sm text-slate-400">Kelola hierarki dan Icon/Logo untuk produk Anda di sini.</p>
+        <p class="text-sm text-slate-400">Kelola hierarki dan Icon/Logo untuk produk prabayar maupun pascabayar.</p>
       </div>
+
+      {successMsg && (
+        <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl text-sm font-medium shadow-sm">
+          Operasi kategori berhasil dilakukan!
+        </div>
+      )}
+      {errorMsg && (
+        <div class="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm font-medium shadow-sm">
+          Gagal memproses perubahan data kategori.
+        </div>
+      )}
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* FORM TAMBAH KATEGORI / BRAND (LOGIKA DAN ENCTYPE ASLI DIPERTAHANKAN 100%) */}
+        {/* FORM TAMBAH KATEGORI / BRAND */}
         <div class="lg:col-span-1 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl h-fit shadow-sm">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Tambah Baru</h2>
           
@@ -71,7 +77,7 @@ export default createRoute(async (c) => {
               <select name="parent_id" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
                 <option value="">-- Jadikan Induk Utama --</option>
                 {parentsForForm.map((p: any) => (
-                  <option value={p.id}>{p.name} ({p.type})</option>
+                  <option value={p.id}>{p.name}</option>
                 ))}
               </select>
             </div>
@@ -79,15 +85,7 @@ export default createRoute(async (c) => {
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Icon / Logo Brand</label>
               <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2 text-slate-400 text-xs outline-none transition-colors file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 cursor-pointer" />
-              <p class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Gambar ini akan otomatis digunakan oleh semua produk di bawah kategori ini.</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Peruntukan Tipe</label>
-              <select name="type" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
-                <option value="product">Produk PPOB</option>
-                <option value="blog">Artikel / Blog</option>
-              </select>
+              <p class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Gambar logo ini akan otomatis muncul pada katalog dashboard transaksi user.</p>
             </div>
 
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 mt-2 text-sm">
@@ -96,28 +94,21 @@ export default createRoute(async (c) => {
           </form>
         </div>
 
-        {/* LIST KATEGORI DENGAN PANEL PENCARIAN & FILTER BARU */}
+        {/* LIST KATEGORI DENGAN PANEL PENCARIAN */}
         <div class="lg:col-span-2 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl shadow-sm flex flex-col">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Daftar Hierarki Kategori & Brand</h2>
           
-          {/* KOMPONEN PANEL PENCARIAN & FILTER (MOBILE FRIENDLY) */}
-          <form method="GET" action="/admin/categories" class="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="sm:col-span-2 relative">
+          {/* PANEL PENCARIAN */}
+          <form method="GET" action="/admin/categories" class="mb-5 flex gap-2">
+            <div class="flex-1 relative">
               <input type="text" name="search" value={search} placeholder="Cari induk kategori atau nama brand..." class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2.5 pl-9 text-slate-200 outline-none text-xs transition-all placeholder-slate-600" />
               <svg width="14" height="14" class="absolute left-3 top-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             </div>
-            <div class="flex gap-2">
-              <select name="type" onchange="this.form.submit()" class="flex-1 bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2.5 text-slate-200 outline-none text-xs cursor-pointer transition-all">
-                <option value="">Semua Tipe</option>
-                <option value="product" selected={filterType === 'product'}>Produk PPOB</option>
-                <option value="blog" selected={filterType === 'blog'}>Artikel / Blog</option>
-              </select>
-              {(search || filterType) && (
-                <a href="/admin/categories" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-colors border border-slate-700 shadow-sm">
-                  Reset
-                </a>
-              )}
-            </div>
+            {search && (
+              <a href="/admin/categories" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold flex items-center justify-center transition-colors border border-slate-700 shadow-sm">
+                Reset
+              </a>
+            )}
           </form>
           
           {/* AREA RENDER POHON HIERARKI */}
@@ -135,10 +126,7 @@ export default createRoute(async (c) => {
                           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                        </div>
                     )}
-                    <div>
-                      <span class="font-bold text-slate-200 block text-sm">{parent.name}</span>
-                      <span class="text-[9px] text-blue-400 font-bold uppercase tracking-wider">{parent.type === 'product' ? 'Produk PPOB' : 'Blog'}</span>
-                    </div>
+                    <span class="font-bold text-slate-200 block text-sm">{parent.name}</span>
                   </div>
                   <a href={`/admin/categories/${parent.id}`} class="text-xs bg-slate-850 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-all shadow-sm">
                     Edit
