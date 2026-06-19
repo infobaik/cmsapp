@@ -1,17 +1,13 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // 1. Ambil parameter filter pencarian dari URL query string
   const search = c.req.query('search') || ''
 
-  // 2. Tarik semua data kategori dari DB D1 secara efisien (Tanpa kolom type)
   const query = `SELECT id, parent_id, name, image_url FROM categories ORDER BY name ASC`
   const { results: categories } = await c.env.DB.prepare(query).all()
 
-  // 3. Form "Tambah Baru" memakai relasi induk utama untuk menentukan brand di bawah kategori induk
   const parentsForForm = categories.filter((cat: any) => cat.parent_id === null)
 
-  // 4. Logika pencarian hierarki agar tidak merusak pohon relasi data
   let filteredCategories = [...categories]
 
   if (search) {
@@ -46,7 +42,7 @@ export default createRoute(async (c) => {
       
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-slate-100">Kategori & Brand</h1>
-        <p class="text-sm text-slate-400">Kelola hierarki dan Icon/Logo untuk produk prabayar maupun pascabayar.</p>
+        <p class="text-sm text-slate-400">Kelola hierarki, Icon, dan Cover Poster untuk produk PPOB.</p>
       </div>
 
       {successMsg && (
@@ -82,23 +78,27 @@ export default createRoute(async (c) => {
               </select>
             </div>
 
-            <div>
+            <div class="pt-2">
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Icon / Logo Brand</label>
               <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2 text-slate-400 text-xs outline-none transition-colors file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 cursor-pointer" />
-              <p class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Gambar logo ini akan otomatis muncul pada katalog dashboard transaksi user.</p>
             </div>
 
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 mt-2 text-sm">
+            <div class="pt-2">
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Cover Poster (Opsional)</label>
+              <input type="file" name="cover" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-2 text-slate-400 text-xs outline-none transition-colors file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-500/10 file:text-purple-400 hover:file:bg-purple-500/20 cursor-pointer" />
+              <p class="text-[10px] text-slate-500 mt-1.5 leading-relaxed">Akan menjadi background ala poster film di dashboard user.</p>
+            </div>
+
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 mt-4 text-sm">
               Simpan Kategori
             </button>
           </form>
         </div>
 
-        {/* LIST KATEGORI DENGAN PANEL PENCARIAN */}
+        {/* LIST KATEGORI DENGAN PANEL PENCARIAN TETAP SAMA */}
         <div class="lg:col-span-2 bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl shadow-sm flex flex-col">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Daftar Hierarki Kategori & Brand</h2>
           
-          {/* PANEL PENCARIAN */}
           <form method="GET" action="/admin/categories" class="mb-5 flex gap-2">
             <div class="flex-1 relative">
               <input type="text" name="search" value={search} placeholder="Cari induk kategori atau nama brand..." class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-2.5 pl-9 text-slate-200 outline-none text-xs transition-all placeholder-slate-600" />
@@ -111,12 +111,10 @@ export default createRoute(async (c) => {
             )}
           </form>
           
-          {/* AREA RENDER POHON HIERARKI */}
           <div class="space-y-4 flex-1">
             {displayParents.map((parent: any) => (
               <div class="bg-[#121217] border border-slate-800/60 rounded-xl p-4 shadow-sm">
                 
-                {/* HEADER KATEGORI INDUK */}
                 <div class="flex items-center justify-between mb-3">
                   <div class="flex items-center gap-3">
                     {parent.image_url ? (
@@ -133,7 +131,6 @@ export default createRoute(async (c) => {
                   </a>
                 </div>
                 
-                {/* LIST SUB-KATEGORI / BRAND ANAK */}
                 {filteredCategories.filter((child: any) => child.parent_id === parent.id).length > 0 && (
                   <ul class="ml-11 space-y-2 border-l border-slate-800/80 pl-4 py-1">
                     {filteredCategories
