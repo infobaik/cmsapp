@@ -44,29 +44,24 @@ export default createRoute(async (c) => {
             Tampilan Katalog & Kategori
           </h2>
           
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Tampilkan Cover Poster</label>
-              <select name="ui_cat_show_cover" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
-                <option value="1" selected={settings.ui_cat_show_cover === '1' || !settings.ui_cat_show_cover}>Ya, Tampilkan (Desain Poster Film)</option>
-                <option value="0" selected={settings.ui_cat_show_cover === '0'}>Tidak, Sembunyikan</option>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Visibilitas Cover Poster</label>
+              <select name="ui_cat_cover_vis" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
+                <option value="all" selected={settings.ui_cat_cover_vis === 'all' || !settings.ui_cat_cover_vis}>Tampilkan di Semua (Desktop & Mobile)</option>
+                <option value="desktop" selected={settings.ui_cat_cover_vis === 'desktop'}>Hanya Tampil di Desktop</option>
+                <option value="mobile" selected={settings.ui_cat_cover_vis === 'mobile'}>Hanya Tampil di Mobile</option>
+                <option value="hidden" selected={settings.ui_cat_cover_vis === 'hidden'}>Sembunyikan Sepenuhnya</option>
               </select>
             </div>
             
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Tampilkan Icon Logo</label>
-              <select name="ui_cat_show_icon" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
-                <option value="1" selected={settings.ui_cat_show_icon === '1' || !settings.ui_cat_show_icon}>Ya, Tampilkan (Mengambang)</option>
-                <option value="0" selected={settings.ui_cat_show_icon === '0'}>Tidak, Sembunyikan</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Visibilitas Perangkat</label>
-              <select name="ui_cat_device" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
-                <option value="all" selected={settings.ui_cat_device === 'all' || !settings.ui_cat_device}>Desktop & Mobile (Semua)</option>
-                <option value="desktop" selected={settings.ui_cat_device === 'desktop'}>Hanya di Layar Desktop</option>
-                <option value="mobile" selected={settings.ui_cat_device === 'mobile'}>Hanya di Layar Mobile</option>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Visibilitas Icon Logo</label>
+              <select name="ui_cat_icon_vis" class="w-full bg-[#121217] border border-slate-800/60 focus:border-purple-500/50 rounded-xl p-3 text-slate-200 outline-none text-sm cursor-pointer">
+                <option value="all" selected={settings.ui_cat_icon_vis === 'all' || !settings.ui_cat_icon_vis}>Tampilkan di Semua (Desktop & Mobile)</option>
+                <option value="desktop" selected={settings.ui_cat_icon_vis === 'desktop'}>Hanya Tampil di Desktop</option>
+                <option value="mobile" selected={settings.ui_cat_icon_vis === 'mobile'}>Hanya Tampil di Mobile</option>
+                <option value="hidden" selected={settings.ui_cat_icon_vis === 'hidden'}>Sembunyikan Sepenuhnya</option>
               </select>
             </div>
           </div>
