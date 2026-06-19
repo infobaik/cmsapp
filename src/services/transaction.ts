@@ -176,11 +176,8 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
   if (!trx) throw new Error('TRANSACTION_NOT_FOUND')
   if (trx.status !== 'waiting_payment') throw new Error('TRANSACTION_ALREADY_PROCESSED')
 
-  // 🔥 PERBAIKAN MUTLAK: BUAT ID TRANSAKSI BARU UNTUK FASE PEMBAYARAN!
   const newPaymentTrxId = `PAS-${userId}-${Date.now()}`
 
-  // 1. UPDATE ID LAMA JADI ID BARU DI DATABASE! 
-  // Ini memastikan saat Webhook dari server provider memanggil ID Baru, database kita mengenalinya.
   const lockResult = await db.prepare(`
     UPDATE transactions 
     SET id = ?, status = 'processing' 
@@ -191,16 +188,19 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
      throw new Error('TRANSACTION_ALREADY_PROCESSED')
   }
 
-  // 2. Potong Saldo
   try {
     await atomicDeductWallet(db, userId, trx.total_price as number)
   } catch (error) {
-    // Jika saldo kurang, kembalikan ID ke semula agar tidak error di mata User
     await db.prepare(`UPDATE transactions SET id = ?, status = 'waiting_payment' WHERE id = ?`).bind(oldTrxId, newPaymentTrxId).run()
     throw error 
   }
 
-  // 3. Tembak Provider dengan ID BARU
+  // 🔥 PERBAIKAN PREFIX OKECONNECT: Mengubah huruf pertama 'C' menjadi 'B' (Contoh: CPLA -> BPLA)
+  let paymentProductCode = (trx.provider_product_code as string).toUpperCase();
+  if (paymentProductCode.startsWith('C')) {
+     paymentProductCode = 'B' + paymentProductCode.substring(1);
+  }
+
   try {
     const providerResult = await dispatchProviderOrder(
       trx.provider_name as string, 'payment',
@@ -210,11 +210,11 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
         secret: trx.api_secret as string,
         proxy_url: trx.proxy_url as string | null 
       },
-      trx.provider_product_code as string, trx.customer_number as string, 
-      newPaymentTrxId // <--- MENGIRIMKAN ID BARU KE PROVIDER!
+      paymentProductCode,
+      trx.customer_number as string, 
+      newPaymentTrxId
     )
 
-    // Jangan paksa success, biarkan Webhook yang mengubahnya menjadi success
     let initialResponseText = typeof providerResult.raw_response === 'string' 
       ? providerResult.raw_response 
       : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
@@ -224,7 +224,6 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
 
     return { success: true, trxId: newPaymentTrxId, sn: providerResult.sn }
   } catch (providerError: any) {
-    // Refund jika gagal total dari server
     await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`)
       .bind(trx.total_price, userId).run()
     
