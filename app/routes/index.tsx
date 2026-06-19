@@ -17,14 +17,14 @@ export default createRoute(async (c) => {
   const deviceVis = settings.ui_cat_device || 'all'
   const forceFallback = !showCover && !showIcon
 
-  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4 "
+  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4 "
   if (deviceVis === 'desktop') wrapperClass += "hidden md:grid"
   if (deviceVis === 'mobile') wrapperClass += "grid md:hidden"
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-12">
       
-      {/* HEADER HERO (Contoh Halaman Depan Publik) */}
+      {/* HEADER HERO */}
       <div class="text-center py-12 md:py-16 bg-gradient-to-b from-indigo-50 to-white rounded-3xl mt-4">
         <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">
           Top Up & Tagihan <span class="text-indigo-600">Semakin Mudah</span>
@@ -35,7 +35,7 @@ export default createRoute(async (c) => {
       </div>
 
       {/* ========================================================= */}
-      {/* 🌟 GRID KATEGORI PUBLIK ALA KOKINPAY 🌟 */}
+      {/* 🎬 GRID KATEGORI ALA POSTER FILM (PUBLIK) 🎬 */}
       {/* ========================================================= */}
       <div class="px-2">
         <h3 class="text-xl font-bold text-slate-800 mb-6">Pilih Layanan</h3>
@@ -44,33 +44,33 @@ export default createRoute(async (c) => {
           {categories.map((cat: any) => (
             <a 
               href={`/kategori/${cat.slug}`} 
-              class="group relative bg-white rounded-[1.25rem] overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] border border-slate-100 hover:border-indigo-100 transition-all duration-300 ease-out transform hover:-translate-y-1 flex flex-col"
+              class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
             >
-              {showCover && (
-                <div class="relative h-20 md:h-24 w-full bg-slate-50 overflow-hidden">
-                  <img 
-                    src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
-                    alt={cat.name} 
-                    class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
-                  />
-                  <div class="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent opacity-60"></div>
-                </div>
+              {showCover ? (
+                <img 
+                  src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
+                  alt={cat.name} 
+                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+                />
+              ) : (
+                <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
               )}
 
-              <div class={`flex flex-col items-center text-center px-2 pb-4 ${showCover ? 'pt-0' : 'pt-5'}`}>
+              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start">
                 
                 {(showIcon || forceFallback) && (
-                   <div class={`relative flex items-center justify-center w-12 h-12 md:w-14 md:h-14 bg-white rounded-2xl shadow-sm border border-slate-100 z-10 
-                               ${showCover ? '-mt-6 md:-mt-7 mb-2' : 'mb-3'} transition-transform group-hover:scale-105`}>
+                   <div class="w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 flex items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors">
                      <img 
                        src={cat.image_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781793434/enccb9r0usvm70mydthm.png'} 
                        alt={cat.name} 
-                       class="w-7 h-7 md:w-8 md:h-8 object-contain" 
+                       class="w-full h-full object-contain drop-shadow-md" 
                      />
                    </div>
                 )}
 
-                <h3 class="font-bold text-slate-700 group-hover:text-indigo-600 text-[11px] md:text-[13px] leading-tight line-clamp-2 px-1">
+                <h3 class="font-bold text-white text-[12px] md:text-[14px] leading-snug line-clamp-2 drop-shadow-lg group-hover:text-indigo-300 transition-colors">
                   {cat.name}
                 </h3>
               </div>
