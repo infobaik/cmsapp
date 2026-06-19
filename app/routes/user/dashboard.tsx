@@ -54,8 +54,8 @@ export default createRoute(async (c) => {
       <div class={wrapperClass}>
         {categories.map((cat: any) => (
           <a 
-            href={`/kategori/${cat.slug}`} 
-            // class aspect-[2/3] adalah kunci utama pembuat bentuk vertikal poster!
+            // 🔥 PERBAIKAN MUTLAK: Tautan sekarang mengarah ke dalam area /user
+            href={`/user/kategori/${cat.slug}`} 
             class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
           >
             {/* 🖼️ GAMBAR POSTER (FULL LAYAR KARTU) */}
@@ -63,7 +63,6 @@ export default createRoute(async (c) => {
               <img 
                 src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
                 alt={cat.name} 
-                // object-cover memastikan gambar otomatis terpotong rapi menjadi vertikal
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
               />
             ) : (
