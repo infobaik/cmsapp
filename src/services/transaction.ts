@@ -70,18 +70,35 @@ export async function processPrepaidOrder(
       trxId
     )
 
-    await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ? WHERE id = ?`)
-      .bind(JSON.stringify(providerResult.raw_response), trxId).run()
+    let rawText = typeof providerResult.raw_response === 'string' 
+      ? providerResult.raw_response 
+      : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
+
+    // 🛑 LOGIKA ERROR MASKING
+    if (rawText.toUpperCase().includes('GAGAL')) {
+       const customLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
+       
+       // Refund Saldo
+       await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(totalPrice, userId).run();
+       
+       // Gagalkan Transaksi
+       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`)
+         .bind(JSON.stringify(providerResult.raw_response), customLog, trxId).run();
+         
+       throw new Error(customLog);
+    }
+
+    let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
+    await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ?, server_log = ? WHERE id = ?`)
+      .bind(JSON.stringify(providerResult.raw_response), cleanLog, trxId).run()
 
     return { success: true, trxId, sn: providerResult.sn }
   } catch (providerError: any) {
-    await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`)
-      .bind(totalPrice, userId).run()
-    
-    await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
-      .bind(providerError.message, trxId).run()
-      
-    throw new Error('PROVIDER_FAILED')
+    if (providerError.message !== "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!") {
+        await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(totalPrice, userId).run()
+        await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`).bind(providerError.message, trxId).run()
+    }
+    throw new Error(providerError.message || 'PROVIDER_FAILED')
   }
 }
 
@@ -132,29 +149,31 @@ export async function createPostpaidInquiry(
      rawText = JSON.stringify(inquiryResult.raw_response);
   }
 
-  let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
-
   const adminMarkup = product.price as number
   const billAmount = 0
   const totalPrice = adminMarkup
+  
+  // 🛑 LOGIKA ERROR MASKING UNTUK CEK TAGIHAN
+  let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
+  let finalStatus = 'processing';
+
+  if (rawText.toUpperCase().includes('GAGAL')) {
+     cleanLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
+     finalStatus = 'failed';
+  }
 
   const insertTrx = `
     INSERT INTO transactions (id, user_id, product_id, customer_number, order_type, bill_amount, admin_markup, total_price, status, provider_response, server_log, idempotency_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'processing', ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `
   await db.prepare(insertTrx).bind(
-    trxId, 
-    userId, 
-    productId, 
-    customerNumber, 
-    product.order_type, 
-    billAmount, 
-    adminMarkup, 
-    totalPrice, 
-    JSON.stringify(inquiryResult.raw_response), 
-    cleanLog,
-    idempotencyKey
+    trxId, userId, productId, customerNumber, product.order_type, billAmount, adminMarkup, totalPrice, finalStatus, 
+    JSON.stringify(inquiryResult.raw_response), cleanLog, idempotencyKey
   ).run()
+
+  if (finalStatus === 'failed') {
+     throw new Error(cleanLog);
+  }
 
   return { trxId, customerName: '-', billAmount, adminMarkup, totalPrice, message: cleanLog }
 }
@@ -195,7 +214,6 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
     throw error 
   }
 
-  // 🔥 PERBAIKAN PREFIX OKECONNECT: Mengubah huruf pertama 'C' menjadi 'B' (Contoh: CPLA -> BPLA)
   let paymentProductCode = (trx.provider_product_code as string).toUpperCase();
   if (paymentProductCode.startsWith('C')) {
      paymentProductCode = 'B' + paymentProductCode.substring(1);
@@ -215,21 +233,35 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
       newPaymentTrxId
     )
 
-    let initialResponseText = typeof providerResult.raw_response === 'string' 
+    let rawText = typeof providerResult.raw_response === 'string' 
       ? providerResult.raw_response 
       : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
 
+    // 🛑 LOGIKA ERROR MASKING UNTUK PEMBAYARAN TAGIHAN
+    if (rawText.toUpperCase().includes('GAGAL')) {
+       const customLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
+       
+       // Refund Saldo
+       await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(trx.total_price, userId).run();
+       
+       // Gagalkan Transaksi
+       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`)
+         .bind(JSON.stringify(providerResult.raw_response), customLog, newPaymentTrxId).run();
+         
+       throw new Error(customLog);
+    }
+
+    let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
+
     await db.prepare(`UPDATE transactions SET provider_response = ?, server_log = ? WHERE id = ?`)
-      .bind(JSON.stringify(providerResult.raw_response), initialResponseText, newPaymentTrxId).run()
+      .bind(JSON.stringify(providerResult.raw_response), cleanLog, newPaymentTrxId).run()
 
     return { success: true, trxId: newPaymentTrxId, sn: providerResult.sn }
   } catch (providerError: any) {
-    await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`)
-      .bind(trx.total_price, userId).run()
-    
-    await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`)
-      .bind(providerError.message, newPaymentTrxId).run()
-      
-    throw new Error('PROVIDER_FAILED')
+    if (providerError.message !== "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!") {
+        await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(trx.total_price, userId).run()
+        await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`).bind(providerError.message, newPaymentTrxId).run()
+    }
+    throw new Error(providerError.message || 'PROVIDER_FAILED')
   }
 }
