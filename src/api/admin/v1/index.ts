@@ -52,6 +52,9 @@ app.post('/system/update', async (c) => {
   }
 })
 
+// ========================================================================
+// ROUTE KATEGORI (DENGAN TAMBAHAN COVER)
+// ========================================================================
 app.post('/categories/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
@@ -59,17 +62,25 @@ app.post('/categories/create', async (c) => {
   const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
   
   const imageFile = body.image as File
+  const coverFile = body.cover as File // 👈 TANGKAP FILE COVER
+  
   let imageUrl = null
+  let coverUrl = null // 👈 SIAPKAN VARIABEL COVER
 
   try {
     if (imageFile && imageFile.size > 0) {
       imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
     }
-    // PERBAIKAN: Menghapus kolom 'type' dari query INSERT
+    if (coverFile && coverFile.size > 0) {
+      coverUrl = await uploadToCloudinary(c.env.DB, coverFile) // 👈 UPLOAD COVER JIKA ADA
+    }
+
+    // PERBAIKAN: Menghapus kolom 'type' & menambahkan 'cover_url'
     await c.env.DB.prepare(`
-      INSERT INTO categories (parent_id, name, slug, image_url) 
-      VALUES (?, ?, ?, ?)
-    `).bind(parentId, name, slug, imageUrl).run()
+      INSERT INTO categories (parent_id, name, slug, image_url, cover_url) 
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(parentId, name, slug, imageUrl, coverUrl).run()
+    
     return c.redirect('/admin/categories?success=true')
   } catch (error) {
     return c.redirect('/admin/categories?error=failed')
@@ -85,29 +96,41 @@ app.post('/categories/:id/update', async (c) => {
   const parentId = body.parent_id ? parseInt(body.parent_id as string) : null
   
   const imageFile = body.image as File
+  const coverFile = body.cover as File // 👈 TANGKAP FILE COVER BARU
 
   try {
+    // Tarik data lama dari database agar gambar tidak hilang jika tidak diupload ulang
+    const existing = await c.env.DB.prepare(`SELECT image_url, cover_url FROM categories WHERE id = ?`).bind(id).first()
+    
+    let imageUrl = existing?.image_url as string | null
+    let coverUrl = existing?.cover_url as string | null
+
+    // Jika ada file icon baru, timpa yang lama
     if (imageFile && imageFile.size > 0) {
-      const imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
-      // PERBAIKAN: Menghapus kolom 'type' dari query UPDATE dengan gambar
-      await c.env.DB.prepare(`
-        UPDATE categories 
-        SET parent_id = ?, name = ?, slug = ?, image_url = ? 
-        WHERE id = ?
-      `).bind(parentId, name, slug, imageUrl, id).run()
-    } else {
-      // PERBAIKAN: Menghapus kolom 'type' dari query UPDATE tanpa gambar
-      await c.env.DB.prepare(`
-        UPDATE categories 
-        SET parent_id = ?, name = ?, slug = ? 
-        WHERE id = ?
-      `).bind(parentId, name, slug, id).run()
+      imageUrl = await uploadToCloudinary(c.env.DB, imageFile)
     }
+    
+    // Jika ada file cover baru, timpa yang lama
+    if (coverFile && coverFile.size > 0) {
+      coverUrl = await uploadToCloudinary(c.env.DB, coverFile)
+    }
+
+    // Lakukan satu kali eksekusi update (jauh lebih bersih)
+    await c.env.DB.prepare(`
+      UPDATE categories 
+      SET parent_id = ?, name = ?, slug = ?, image_url = ?, cover_url = ? 
+      WHERE id = ?
+    `).bind(parentId, name, slug, imageUrl, coverUrl, id).run()
+    
     return c.redirect(`/admin/categories?success=updated`)
   } catch (error: any) {
     return c.redirect(`/admin/categories/${id}?error=failed`)
   }
 })
+
+// ========================================================================
+// ROUTE PRODUK & LAINNYA
+// ========================================================================
 app.post('/products/create', async (c) => {
   const body = await c.req.parseBody({ all: true })
   const name = body.name as string
@@ -296,8 +319,6 @@ app.post('/products/sync-okeconnect', async (c) => {
     }
 
     // 3. EKSEKUSI PRODUK: UPSERT KUNCI GANDA MUTLAK
-    // PERBAIKAN: Menambahkan description, is_visible, provider_status.
-    // Catatan: Kolom `status` utama tidak di-update pada konflik agar setelan admin tidak tertimpa!
     const upsertStmt = `
       INSERT INTO products (category_id, provider_id, provider_product_code, name, description, stock_type, order_type, price, status, provider_status, is_visible) 
       VALUES (?, ?, ?, ?, ?, 'general', ?, ?, 'active', ?, ?)
@@ -317,34 +338,26 @@ app.post('/products/sync-okeconnect', async (c) => {
       const pDesc = item.keterangan || '';
       const basePrice = Number(item.harga);
       
-      // LOGIKA PEMISAHAN PREPAID/POSTPAID & INQUIRY
       let oType = 'prepaid';
       let finalSellPrice = 0;
       let isVis = 1;
 
       if (basePrice === 0 || pCode.toUpperCase().startsWith('INQ')) {
-        // Produk Cek Tagihan
         oType = 'inquiry';
-        finalSellPrice = 0; // Cek tagihan selalu murni Rp 0
+        finalSellPrice = 0;
         isVis = 1;
       } else if (basePrice < 0 || pCode.toUpperCase().startsWith('PAY')) {
-        // Produk Eksekusi Bayar Tagihan (POSTPAID)
         oType = 'postpaid';
-        // PERBAIKAN: Rumus ajaib Anda diterapkan di sini! 
-        // Contoh: -3000 (Komisi Asli) + 500 (Margin) = -2500 (Komisi untuk User)
         finalSellPrice = basePrice + defaultMargin; 
-        isVis = 0; // Sembunyikan dari katalog!
+        isVis = 0;
       } else {
-        // Produk Prabayar Umum (Pulsa, Game, Data)
         oType = 'prepaid';
-        // Contoh: 10000 (Harga Asli) + 500 (Margin) = 10500 (Harga User)
         finalSellPrice = basePrice + defaultMargin;
         isVis = 1;
       }
       
       const pProvStatus = (item.status === '1' || item.status === 'normal') ? 'active' : 'inactive';
       
-      // Ambil ID Brand dari Map
       const brandSlug = String(item.produk || 'Umum').toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const brandId = slugToId.get(brandSlug);
 
@@ -362,4 +375,5 @@ app.post('/products/sync-okeconnect', async (c) => {
     return c.redirect(`/admin/products?error=${encodeURIComponent(error.message)}`);
   }
 })
+
 export default app
