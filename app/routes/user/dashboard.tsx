@@ -54,8 +54,8 @@ export default createRoute(async (c) => {
       <div class={wrapperClass}>
         {categories.map((cat: any) => (
           <a 
-            // 🔥 PERBAIKAN MUTLAK: Tautan sekarang mengarah ke dalam area /user
-            href={`/user/kategori/${cat.slug}`} 
+            // 🔥 PERBAIKAN MUTLAK: Dikembalikan ke ID sesuai dengan struktur aplikasi Anda!
+            href={`/user/kategori/${cat.id}`} 
             class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
           >
             {/* 🖼️ GAMBAR POSTER (FULL LAYAR KARTU) */}
