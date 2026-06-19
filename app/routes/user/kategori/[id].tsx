@@ -1,145 +1,145 @@
 import { createRoute } from 'honox/factory'
+import { getUserWallet } from '../../../../src/services/wallet'
 
 export default createRoute(async (c) => {
-  const categoryId = c.req.param('id')
+  const id = c.req.param('id')
+  const user = c.get('user')!
+  
+  const wallet = await getUserWallet(c.env.DB, user.id) || { balance_available: 0, balance_pending: 0 }
 
-  // 1. Ambil detail data kategori saat ini (termasuk kolom image_url milik induk)
-  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(categoryId).first()
+  // 1. CEK KATEGORI SAAT INI
+  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
+  if (!category) return c.notFound()
 
-  if (!category) {
-    return c.render(
-      <div class="max-w-md mx-auto text-center py-12 bg-[#18181b] border border-slate-800 rounded-2xl my-8 p-6">
-        <h2 class="text-lg font-bold text-slate-200 mb-2">Kategori Tidak Ditemukan</h2>
-        <p class="text-sm text-slate-400 mb-4">Maaf, layanan yang Anda cari tidak tersedia.</p>
-        <a href="/user/dashboard" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl transition-all">Kembali ke Dashboard</a>
-      </div>,
-      { title: 'Tidak Ditemukan' }
-    )
-  }
+  // 2. AMBIL PENGATURAN UI GLOBAL (Agar desainnya sama dengan Dashboard Induk)
+  const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
+  const settings: Record<string, string> = {}
+  sysSettings.forEach((row: any) => { settings[row.key] = row.value })
 
-  // 2. Cek apakah ini Kategori Induk Utama (parent_id IS NULL) atau Sub-Kategori
-  const isParent = category.parent_id === null
-  let subCategories: any[] = []
+  // 3. AMBIL SUB KATEGORI
+  const { results: subCategories } = await c.env.DB.prepare(`
+    SELECT id, name, slug, image_url, cover_url 
+    FROM categories 
+    WHERE parent_id = ? 
+    ORDER BY name ASC
+  `).bind(id).all()
+
+  // 4. AMBIL PRODUK (Hanya dipanggil JIKA di dalam kategori ini tidak ada sub-kategori lagi)
   let products: any[] = []
-  let pageTitle = category.name
-
-  if (isParent) {
-    // JIKA INDUK: Ambil sub-kategori / brand di bawahnya
-    const { results } = await c.env.DB.prepare(
-      `SELECT id, name, slug, image_url FROM categories WHERE parent_id = ? ORDER BY name ASC`
-    ).bind(categoryId).all()
-    subCategories = results || []
-  } else {
-    // JIKA SUB-KATEGORI: Tarik produk aktif yang lolos verifikasi visibilitas (is_visible = 1)
-    const parentCat = await c.env.DB.prepare(`SELECT name FROM categories WHERE id = ?`).bind(category.parent_id).first()
-    if (parentCat) pageTitle = `${parentCat.name} - ${category.name}`
-
-    const { results } = await c.env.DB.prepare(
-      `SELECT id, name, price, provider_product_code, order_type
-       FROM products
-       WHERE category_id = ? AND status = 'active' AND is_visible = 1
-       ORDER BY price ASC`
-    ).bind(categoryId).all()
-    products = results || []
+  if (subCategories.length === 0) {
+    const { results } = await c.env.DB.prepare(`
+      SELECT p.*, pr.name as provider_name 
+      FROM products p
+      JOIN providers pr ON p.provider_id = pr.id
+      WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
+      ORDER BY p.price ASC
+    `).bind(id).all()
+    products = results
   }
+
+  // 5. LOGIKA VISIBILITAS KATEGORI (Turunan dari Pengaturan Global)
+  const showCover = settings.ui_cat_show_cover === '1'
+  const showIcon = settings.ui_cat_show_icon === '1'
+  const deviceVis = settings.ui_cat_device || 'all'
+  const forceFallback = !showCover && !showIcon
+
+  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4 "
+  if (deviceVis === 'desktop') wrapperClass += "hidden md:grid"
+  if (deviceVis === 'mobile') wrapperClass += "grid md:hidden"
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-6">
       
-      {/* HEADER NAVIGASI */}
-      <div class="flex items-center gap-4 mb-2">
-        <a href={isParent ? "/user/dashboard" : `/user/kategori/${category.parent_id}`} class="p-2.5 bg-[#18181b] border border-slate-800/60 rounded-xl text-slate-400 hover:text-white transition-colors shadow-sm">
-          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
-        </a>
+      {/* HEADER SALDO */}
+      <div class="bg-gradient-to-r from-indigo-600 to-blue-500 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between">
         <div>
-          <h1 class="text-xl font-bold text-slate-100">{category.name}</h1>
-          <p class="text-xs text-slate-400">
-            {isParent ? 'Pilih jenis brand / layanan yang ingin Anda gunakan.' : 'Pilih layanan produk yang Anda butuhkan.'}
-          </p>
+          <p class="text-indigo-100 text-sm font-medium mb-1">Saldo Tersedia</p>
+          <h2 class="text-3xl font-bold tracking-tight">
+            Rp {wallet.balance_available.toLocaleString('id-ID')}
+          </h2>
+        </div>
+        <div class="mt-4 md:mt-0 flex space-x-3">
+          <a href="/user/wallet" class="bg-white/20 hover:bg-white/30 transition-colors px-4 py-2 rounded-xl text-sm font-semibold backdrop-blur-sm">
+            Isi Saldo
+          </a>
         </div>
       </div>
 
-      {/* TAMPILAN A: GRID SUB-KATEGORI */}
-      {isParent && (
-        <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-          {subCategories.length > 0 ? subCategories.map((sub: any) => {
-            
-            // LOGIKA FALLBACK BERJENJANG:
-            // Gunakan sub.image_url jika ada, jika tidak ada pakai category.image_url (milik induk)
-            const activeImage = sub.image_url || category.image_url
+      {/* NAVIGASI BREADCRUMB */}
+      <div class="flex items-center space-x-2 text-sm text-slate-500 px-1">
+        <a href="/user/dashboard" class="hover:text-indigo-600 transition-colors font-medium">Beranda</a>
+        <span>&rsaquo;</span>
+        <span class="font-semibold text-slate-800">{category.name}</span>
+      </div>
 
-            return (
-              <a href={`/user/kategori/${sub.id}`} class="flex flex-col items-center justify-center p-4 bg-[#18181b] border border-slate-800/60 hover:border-emerald-500/50 rounded-2xl transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/10 group">
-                <div class="w-12 h-12 rounded-full bg-[#121217] flex items-center justify-center mb-3 group-hover:bg-emerald-500/20 text-slate-400 group-hover:text-emerald-400 transition-colors overflow-hidden">
-                  
-                  {activeImage ? (
-                    <img 
-                      src={activeImage} 
-                      alt={sub.name} 
-                      class="w-full h-full object-cover" 
-                      loading="lazy" 
-                    />
-                  ) : (
-                    <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72m-13.5 8.65h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .415.336.75.75.75z" /></svg>
-                  )}
+      {/* KONDISIONAL RENDER: Menampilkan Grid Sub-Kategori atau List Produk */}
+      {subCategories.length > 0 ? (
+        /* ========================================================= */
+        /* 🎬 GRID SUB-KATEGORI ALA POSTER FILM (SAMA PERSIS!) 🎬 */
+        /* ========================================================= */
+        <div class={wrapperClass}>
+          {subCategories.map((cat: any) => (
+            <a 
+              href={`/user/kategori/${cat.id}`} 
+              class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
+            >
+              {showCover ? (
+                <img 
+                  src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
+                  alt={cat.name} 
+                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+                />
+              ) : (
+                <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
+              )}
 
-                </div>
-                <span class="text-xs font-semibold text-slate-300 text-center">{sub.name}</span>
-              </a>
-            )
-          }) : (
-            <div class="col-span-full text-center py-12 text-slate-500 text-xs bg-[#18181b] border border-dashed border-slate-800 rounded-2xl">
-              Belum ada sub-kategori/brand di bawah layanan ini.
-            </div>
-          )}
-        </div>
-      )}
+              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
 
-      {/* TAMPILAN B: TABEL PRODUK ULTRA RAMPING */}
-      {!isParent && (
-        <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl overflow-hidden shadow-sm">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm text-slate-300 table-fixed">
-              <thead class="bg-slate-900/40 text-xs uppercase font-semibold text-slate-500 border-b border-slate-800/60">
-                <tr>
-                  <th class="px-4 py-4 w-[50%] sm:w-[60%]">Layanan</th>
-                  <th class="px-4 py-4 text-right w-[30%] sm:w-[25%]">Harga</th>
-                  <th class="px-4 py-4 text-center w-[20%] sm:w-[15%]">Aksi</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-800/50">
-                {products.length > 0 ? products.map((prod: any) => (
-                  <tr class="hover:bg-slate-800/10 transition-colors">
-                    <td class="px-4 py-3.5">
-                      <span class="font-medium text-slate-200 block text-xs sm:text-sm truncate whitespace-normal">{prod.name}</span>
-                      <span class="text-[9px] text-slate-500 font-mono block mt-0.5 uppercase tracking-wider">{prod.provider_product_code}</span>
-                    </td>
-                    <td class="px-4 py-3.5 text-right font-bold text-slate-100 whitespace-nowrap text-xs sm:text-sm">
-                      Rp {prod.price.toLocaleString('id-ID')}
-                    </td>
-                    <td class="px-4 py-3.5 text-center whitespace-nowrap">
-                      <a href={`/user/order/${prod.id}`} class={`px-3.5 py-1.5 text-white text-xs font-bold rounded-xl transition-all inline-block shadow-md ${prod.order_type === 'inquiry' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>
-                         {prod.order_type === 'inquiry' ? 'Cek' : 'Beli'}
-                      </a>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={3} class="px-4 py-16 text-center text-slate-500 text-xs">
-                      <div class="flex flex-col items-center justify-center space-y-2 opacity-60">
-                        <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
-                        <p>Belum ada layanan aktif di brand ini.</p>
-                      </div>
-                    </td>
-                  </tr>
+              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start">
+                {(showIcon || forceFallback) && (
+                   <div class="w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 flex items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors">
+                     <img 
+                       src={cat.image_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781793434/enccb9r0usvm70mydthm.png'} 
+                       alt={cat.name} 
+                       class="w-full h-full object-contain drop-shadow-md" 
+                     />
+                   </div>
                 )}
-              </tbody>
-            </table>
+                <h3 class="font-bold text-white text-[12px] md:text-[14px] leading-snug line-clamp-2 drop-shadow-lg group-hover:text-indigo-300 transition-colors">
+                  {cat.name}
+                </h3>
+              </div>
+            </a>
+          ))}
+        </div>
+      ) : (
+        /* ========================================================= */
+        /* 🛍️ DAFTAR PRODUK (Jika ini adalah kategori paling akhir) 🛍️ */
+        /* ========================================================= */
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div class="p-4 bg-slate-50 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800">Pilih Produk {category.name}</h3>
+          </div>
+          <div class="divide-y divide-slate-100">
+            {products.length > 0 ? products.map((prod: any) => (
+              <a href={`/user/order/${prod.id}`} class="flex items-center justify-between p-4 hover:bg-indigo-50/50 transition-colors group">
+                <div>
+                  <h4 class="font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors text-sm md:text-base">{prod.name}</h4>
+                  <p class="text-xs text-slate-500 mt-1">{prod.description || 'Proses Cepat & Otomatis'}</p>
+                </div>
+                <div class="text-right ml-4 shrink-0">
+                  <div class="font-bold text-indigo-600 text-sm md:text-base">Rp {prod.price.toLocaleString('id-ID')}</div>
+                </div>
+              </a>
+            )) : (
+              <div class="p-8 text-center text-slate-500 flex flex-col items-center">
+                <span class="text-3xl mb-2">📦</span>
+                <p>Produk belum tersedia di kategori ini.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
-
-    </div>,
-    { title: pageTitle }
+    </div>
   )
 })
