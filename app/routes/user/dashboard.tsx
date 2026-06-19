@@ -10,25 +10,31 @@ export default createRoute(async (c) => {
   const settings: Record<string, string> = {}
   sysSettings.forEach((row: any) => { settings[row.key] = row.value })
 
-  // 2. AMBIL KATEGORI
+  // 2. AMBIL KATEGORI UTAMA
   const { results: categories } = await c.env.DB.prepare(
     `SELECT id, name, slug, image_url, cover_url FROM categories WHERE parent_id IS NULL ORDER BY name ASC`
   ).all()
 
-  // 3. LOGIKA VISIBILITAS
-  const showCover = settings.ui_cat_show_cover === '1'
-  const showIcon = settings.ui_cat_show_icon === '1'
-  const deviceVis = settings.ui_cat_device || 'all'
-  const forceFallback = !showCover && !showIcon
+  // 3. LOGIKA VISIBILITAS OTONOM (Cover dan Icon berdiri sendiri)
+  const coverVis = settings.ui_cat_cover_vis || 'all'
+  const iconVis = settings.ui_cat_icon_vis || 'all'
 
-  // Karena bentuknya vertikal (langsing), kita bisa muat lebih banyak kolom (sampai 7 kolom di layar besar)
-  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4 "
-  if (deviceVis === 'desktop') wrapperClass += "hidden md:grid"
-  if (deviceVis === 'mobile') wrapperClass += "grid md:hidden"
+  // Fungsi pintar pencipta class Tailwind sesuai perangkat yang diizinkan Admin
+  const getVisClass = (vis: string, defaultDisplay: string) => {
+    if (vis === 'hidden') return 'hidden '
+    if (vis === 'desktop') return `hidden md:${defaultDisplay} `
+    if (vis === 'mobile') return `${defaultDisplay} md:hidden `
+    return `${defaultDisplay} `
+  }
+
+  // Generate class akhir untuk gambar dan icon
+  const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+  const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-6">
-      {/* BAGIAN WALLET TETAP SAMA */}
+      
+      {/* BAGIAN WALLET */}
       <div class="bg-gradient-to-r from-indigo-600 to-blue-500 rounded-2xl p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between">
         <div>
           <p class="text-indigo-100 text-sm font-medium mb-1">Saldo Tersedia</p>
@@ -51,38 +57,41 @@ export default createRoute(async (c) => {
       {/* ========================================================= */}
       <h3 class="text-lg font-bold text-slate-800 px-1">Layanan Tersedia</h3>
       
-      <div class={wrapperClass}>
+      <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
         {categories.map((cat: any) => (
           <a 
-            // 🔥 PERBAIKAN MUTLAK: Dikembalikan ke ID sesuai dengan struktur aplikasi Anda!
             href={`/user/kategori/${cat.id}`} 
-            class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
+            class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
           >
-            {/* 🖼️ GAMBAR POSTER (FULL LAYAR KARTU) */}
-            {showCover ? (
+            {/* 🖼️ GAMBAR POSTER (Menyesuaikan Pengaturan Admin) */}
+            {coverVis !== 'hidden' && cat.cover_url && (
               <img 
-                src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
+                src={cat.cover_url} 
                 alt={cat.name} 
-                class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+                class={coverClass}
               />
-            ) : (
-              <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
             )}
 
             {/* 🌑 GRADIENT OVERLAY (Gelap di bawah agar teks & icon terbaca) */}
-            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
 
             {/* 💎 KONTEN BAWAH (Icon + Text ditumpuk di sudut kiri bawah ala cover Netflix) */}
-            <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start">
+            <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
               
-              {/* 🎯 ICON (Gaya Kaca / Glassmorphism) */}
-              {(showIcon || forceFallback) && (
-                 <div class="w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 flex items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors">
-                   <img 
-                     src={cat.image_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781793434/enccb9r0usvm70mydthm.png'} 
-                     alt={cat.name} 
-                     class="w-full h-full object-contain drop-shadow-md" 
-                   />
+              {/* 🎯 ICON OTONOM */}
+              {iconVis !== 'hidden' && (
+                 <div class={iconClass}>
+                   {cat.image_url ? (
+                     <img 
+                       src={cat.image_url} 
+                       alt={cat.name} 
+                       class="w-full h-full object-contain drop-shadow-md" 
+                     />
+                   ) : (
+                     <div class="w-full h-full bg-slate-500/50 rounded flex items-center justify-center">
+                       <span class="text-white text-xs font-bold">Ico</span>
+                     </div>
+                   )}
                  </div>
               )}
 
