@@ -2,38 +2,26 @@ import { Hono } from 'hono'
 
 const app = new Hono()
 
-app.post('/', async (c) => {
+// PERBAIKAN MUTLAK: Menggunakan app.get() karena OkeConnect mengirim via GET parameter
+app.get('/', async (c) => {
   try {
-    // 1. Ambil raw data dari OkeConnect
-    const rawBody = await c.req.text()
-    let payload
-    
-    try {
-      payload = JSON.parse(rawBody)
-    } catch (e) {
-      // Jika OkeConnect mengirim form-urlencoded (x-www-form-urlencoded), fallback ke parseBody
-      payload = await c.req.parseBody()
-    }
+    // 1. Ambil data dari URL Query (bukan dari Body JSON)
+    const trxId = c.req.query('refid')
+    const message = c.req.query('message') || ''
 
-    // 2. Petakan Data dari OkeConnect
-    // (OkeConnect biasanya mengirimkan parameter refID, status, harga, dan sn/keterangan)
-    const trxId = payload.refID || payload.ref_id
     if (!trxId) return c.text('No Reference ID', 400)
 
-    const providerStatus = String(payload.status || '').toUpperCase()
-    
-    // Ambil nominal tagihan murni dari server OkeConnect
-    const providerPrice = Number(payload.harga || payload.price || 0)
-
-    // 3. Terjemahkan Status OkeConnect ke Status Sistem Kita
+    // 2. Terjemahkan Status dari isi Pesan
     let localStatus = 'processing'
-    if (providerStatus === 'SUKSES' || providerStatus === 'SUCCESS' || providerStatus === '1') {
+    const upperMessage = message.toUpperCase()
+    
+    if (upperMessage.includes('SUKSES') || upperMessage.includes('SUCCESS')) {
       localStatus = 'success'
-    } else if (providerStatus === 'GAGAL' || providerStatus === 'FAILED' || providerStatus === '2') {
+    } else if (upperMessage.includes('GAGAL') || upperMessage.includes('FAILED')) {
       localStatus = 'failed'
     }
 
-    // 4. Cari Transaksi di Database
+    // 3. Cari Transaksi di Database
     const trx = await c.env.DB.prepare(`
       SELECT user_id, order_type, admin_markup, total_price 
       FROM transactions 
@@ -45,10 +33,16 @@ app.post('/', async (c) => {
 
        // ================================================================
        // 🔥 LOGIKA POSTPAID (TAGIHAN) 🔥
-       // Jika transaksi adalah tagihan dan OkeConnect merespon SUKSES menemukan tagihan
+       // Jika transaksi adalah tagihan dan OkeConnect merespon SUKSES
        // ================================================================
        if (trx.order_type === 'postpaid' && localStatus === 'success') {
-          // Harga Jual Baru = Harga Asli Tagihan dari OkeConnect + Markup (Keuntungan Admin)
+          
+          // Ekstrak Total Tagihan (TTAG) dari teks pesan OkeConnect menggunakan Regex
+          // Contoh teks: "/TAG:63740/ADMIN:3000/TTAG:66740/"
+          const tagMatch = message.match(/TTAG\:(\d+)/i) || message.match(/TAG\:(\d+)/i)
+          const providerPrice = tagMatch ? Number(tagMatch[1]) : 0
+
+          // Harga Jual Baru = Harga Asli Tagihan dari OkeConnect + Markup Anda
           const newTotalPrice = providerPrice + Number(trx.admin_markup)
           
           batchStatements.push(
@@ -57,9 +51,10 @@ app.post('/', async (c) => {
               SET status = 'waiting_payment', 
                   bill_amount = ?, 
                   total_price = ?, 
-                  provider_response = ? 
+                  provider_response = ?,
+                  server_log = ?
               WHERE id = ? AND status != 'success'
-            `).bind(providerPrice, newTotalPrice, rawBody, trxId)
+            `).bind(providerPrice, newTotalPrice, message, message, trxId)
           )
        } 
        // ================================================================
@@ -69,12 +64,12 @@ app.post('/', async (c) => {
           batchStatements.push(
             c.env.DB.prepare(`
               UPDATE transactions 
-              SET status = ?, provider_response = ? 
+              SET status = ?, provider_response = ?, server_log = ?
               WHERE id = ? AND status != 'success'
-            `).bind(localStatus, rawBody, trxId)
+            `).bind(localStatus, message, message, trxId)
           )
 
-          // Auto-Refund: Jika transaksi gagal, kembalikan saldo ke dompet user
+          // Auto-Refund: Kembalikan saldo jika transaksi Gagal
           if (localStatus === 'failed') {
             batchStatements.push(
               c.env.DB.prepare(`
@@ -84,17 +79,21 @@ app.post('/', async (c) => {
           }
        }
        
-       // Eksekusi perubahan ke Database D1
        await c.env.DB.batch(batchStatements)
     }
 
-    // Wajib merespon 200 OK agar OkeConnect tahu webhook sudah diterima
+    // Wajib merespon teks OK ke server OkeConnect
     return c.text('OK', 200)
     
   } catch (error) {
     console.error('OkeConnect Webhook Error:', error)
     return c.text('Internal Server Error', 500)
   }
+})
+
+// Berjaga-jaga jika sewaktu-waktu OkeConnect beralih ke POST JSON di masa depan
+app.post('/', async (c) => {
+  return c.text('Gunakan metode GET sesuai standar API OkeConnect', 200)
 })
 
 export default app
