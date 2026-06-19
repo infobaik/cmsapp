@@ -27,7 +27,6 @@ export async function processPrepaidOrder(
   customerNumber: string, 
   idempotencyKey: string
 ) {
-  // 🔥 PERBAIKAN: Memasukkan pr.proxy_url ke dalam query
   const query = `
     SELECT p.price, p.order_type, p.status, p.provider_product_code,
            pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url 
@@ -58,7 +57,6 @@ export async function processPrepaidOrder(
   }
 
   try {
-    // 🔥 PERBAIKAN: Meneruskan proxy_url ke dispatchProviderOrder
     const providerResult = await dispatchProviderOrder(
       product.provider_name as string,
       'payment',
@@ -66,7 +64,7 @@ export async function processPrepaidOrder(
         endpoint: product.api_endpoint as string, 
         key: product.api_key as string, 
         secret: product.api_secret as string,
-        proxy: proxy_url as string 
+        proxy_url: product.proxy_url as string | null // PERBAIKAN: proxy_url
       },
       product.provider_product_code as string,
       customerNumber,
@@ -99,7 +97,6 @@ export async function createPostpaidInquiry(
   customerNumber: string, 
   idempotencyKey: string
 ) {
-  // 🔥 PERBAIKAN: Memasukkan pr.proxy_url ke dalam query
   const query = `
     SELECT p.price, p.order_type, p.status, p.provider_product_code,
            pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url 
@@ -114,7 +111,6 @@ export async function createPostpaidInquiry(
 
   const trxId = `PAS-${userId}-${Date.now()}`
 
-  // 🔥 PERBAIKAN: Meneruskan proxy_url ke dispatchProviderOrder
   const inquiryResult = await dispatchProviderOrder(
     product.provider_name as string,
     'inquiry',
@@ -122,7 +118,7 @@ export async function createPostpaidInquiry(
       endpoint: product.api_endpoint as string, 
       key: product.api_key as string, 
       secret: product.api_secret as string,
-      proxy: product.proxy_url as string 
+      proxy_url: product.proxy_url as string | null // PERBAIKAN: proxy_url
     },
     product.provider_product_code as string,
     customerNumber,
@@ -174,7 +170,6 @@ export async function createPostpaidInquiry(
 // 3. PROSES BAYAR TAGIHAN POSTPAID
 // ========================================================================
 export async function payPostpaidBill(db: D1Database, userId: number, trxId: string) {
-  // 🔥 PERBAIKAN: Memasukkan pr.proxy_url ke dalam query
   const trxQuery = `
     SELECT t.id, t.total_price, t.status, t.customer_number, 
            p.provider_product_code, pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url
@@ -202,14 +197,13 @@ export async function payPostpaidBill(db: D1Database, userId: number, trxId: str
   }
 
   try {
-    // 🔥 PERBAIKAN: Meneruskan proxy_url ke dispatchProviderOrder
     const providerResult = await dispatchProviderOrder(
       trx.provider_name as string, 'payment',
       { 
         endpoint: trx.api_endpoint as string, 
         key: trx.api_key as string, 
         secret: trx.api_secret as string,
-        proxy: trx.proxy_url as string 
+        proxy_url: trx.proxy_url as string | null // PERBAIKAN: proxy_url
       },
       trx.provider_product_code as string, trx.customer_number as string, trxId
     )
