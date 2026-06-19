@@ -32,7 +32,6 @@ app.get('/', async (c) => {
        // =====================================================================
        let cleanLog = message;
        // Regex ini memotong mulai dari "SN:" sampai tepat sebelum ". Saldo"
-       // Menghasilkan: SN: H GOJALI B BURHAN/TAG:63740/ADMIN:3000/TTAG:66740/...
        const snMatch = message.match(/SN:\s*(.*?)(?=\.\s*Saldo|\.$|$)/i);
        
        if (snMatch) {
@@ -45,7 +44,8 @@ app.get('/', async (c) => {
        // =====================================================================
        // 🔥 2. LOGIKA POSTPAID (TAGIHAN) 🔥
        // =====================================================================
-       if (trx.order_type === 'postpaid' && localStatus === 'success') {
+       // 👇 PERBAIKAN MUTLAK: Tambahkan pendeteksi 'inquiry' di sini!
+       if ((trx.order_type === 'inquiry' || trx.order_type === 'postpaid') && localStatus === 'success') {
           
           // Ekstrak nilai TTAG dari blok yang sudah bersih
           const tagMatch = cleanLog.match(/TTAG\:(\d+)/i) || cleanLog.match(/TAG\:(\d+)/i)
@@ -53,8 +53,7 @@ app.get('/', async (c) => {
 
           const newTotalPrice = providerPrice + Number(trx.admin_markup)
           
-          // 3. FORMAT FINAL SESUAI PERMINTAAN ANDA:
-          // SN: H GOJALI B BURHAN/TAG:63740...MET:18163-18298. 66740
+          // FORMAT FINAL: SN: H GOJALI B BURHAN/TAG:63740...MET:18163-18298. 66740
           const finalLog = `${cleanLog} ${providerPrice}`;
           
           batchStatements.push(
