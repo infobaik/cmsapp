@@ -20,7 +20,7 @@ export default createRoute(async (c) => {
     )
   }
 
-  // 2. Ambil daftar kategori utama untuk opsi "Kategori Induk" (Kecuali ID kategori ini sendiri agar tidak looping)
+  // 2. Ambil daftar kategori utama untuk opsi "Kategori Induk"
   const { results: parents } = await c.env.DB.prepare(
     `SELECT id, name FROM categories WHERE parent_id IS NULL AND id != ? ORDER BY name ASC`
   ).bind(categoryId).all()
@@ -37,7 +37,7 @@ export default createRoute(async (c) => {
         </a>
         <div>
           <h1 class="text-2xl font-bold text-slate-100">Edit Kategori / Brand</h1>
-          <p class="text-sm text-slate-400">Ubah nama, struktur posisi induk, serta unggah ulang icon logo brand.</p>
+          <p class="text-sm text-slate-400">Ubah nama, struktur, icon logo, dan cover poster film.</p>
         </div>
       </div>
 
@@ -51,13 +51,22 @@ export default createRoute(async (c) => {
       <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl p-6 md:p-8 shadow-sm">
         <form method="POST" action={`/api/admin/v1/categories/${category.id}/update`} enctype="multipart/form-data" class="space-y-6">
           
-          {/* Pratinjau Gambar Icon Kategori Saat Ini */}
-          {category.image_url && (
-            <div class="p-4 rounded-xl border border-slate-800 bg-[#121217] w-fit">
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Icon / Logo Aktif</label>
-              <img src={category.image_url as string} alt={category.name as string} class="w-16 h-16 rounded-xl object-contain bg-white p-1 border border-slate-700 shadow-sm" />
-            </div>
-          )}
+          {/* Pratinjau Gambar (Icon dan Cover) */}
+          <div class="flex flex-wrap gap-4">
+            {category.image_url && (
+              <div class="p-4 rounded-xl border border-slate-800 bg-[#121217] w-fit">
+                <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Icon / Logo Aktif</label>
+                <img src={category.image_url as string} alt={category.name as string} class="w-16 h-16 rounded-xl object-contain bg-white p-1 border border-slate-700 shadow-sm" />
+              </div>
+            )}
+            
+            {category.cover_url && (
+              <div class="p-4 rounded-xl border border-slate-800 bg-[#121217] flex-1 min-w-[200px] max-w-sm">
+                <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Cover Poster Aktif</label>
+                <img src={category.cover_url as string} alt="Cover" class="w-full h-16 rounded-xl object-cover border border-slate-700 shadow-sm opacity-80 hover:opacity-100 transition-opacity" />
+              </div>
+            )}
+          </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -76,10 +85,15 @@ export default createRoute(async (c) => {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-6 border-t border-slate-800/60 pt-6">
+          {/* UPLOAD FILE BARU */}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-slate-800/60 pt-6">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ganti Berkas Gambar / Icon Baru</label>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ganti Icon Baru</label>
               <input type="file" name="image" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 rounded-xl p-2 text-slate-400 outline-none text-sm file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 transition-all cursor-pointer" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ganti Cover Poster Baru</label>
+              <input type="file" name="cover" accept="image/*" class="w-full bg-[#121217] border border-slate-800/60 rounded-xl p-2 text-slate-400 outline-none text-sm file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-purple-500/10 file:text-purple-400 hover:file:bg-purple-500/20 transition-all cursor-pointer" />
             </div>
           </div>
 
