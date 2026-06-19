@@ -66,7 +66,7 @@ export async function processPrepaidOrder(
         endpoint: product.api_endpoint as string, 
         key: product.api_key as string, 
         secret: product.api_secret as string,
-        proxy: product.proxy_url as string 
+        proxy: proxy_url as string 
       },
       product.provider_product_code as string,
       customerNumber,
