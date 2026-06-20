@@ -61,9 +61,9 @@ app.post('/wallet/deposit', async (c) => {
 })
 
 // ====================================================================
-// ROUTER PEMBUATAN TRANSAKSI (Prepaid, Open Amount, & Inquiry)
+// 🔥 FUNGSI UTAMA PEMBUATAN ORDER (Bisa dipanggil oleh rute manapun)
 // ====================================================================
-app.post('/order/create', async (c) => {
+const createOrderHandler = async (c: any) => {
   let pid = ''
   try {
     const userId = c.get('ui_user_id')
@@ -78,7 +78,7 @@ app.post('/order/create', async (c) => {
     // Serahkan SELURUH PENGECEKAN ke Service Transaksi
     const orderResult = await processNewOrder(c.env.DB, userId, productId, customerNumber, idempotencyKey, inputAmount)
 
-    // Arahkan halaman sesuai jenis output yang dikembalikan mesin
+    // Arahkan halaman sesuai jenis output
     if (orderResult.type === 'prepaid') {
       return c.redirect('/user/history?success=transaksi_berhasil')
     } else {
@@ -86,7 +86,6 @@ app.post('/order/create', async (c) => {
     }
 
   } catch (error: any) {
-    // Tangkap kode eror spesifik
     let errMsg = error.message
     if (errMsg === 'NOMINAL_MINIMAL_1000') errMsg = 'Nominal topup minimal adalah Rp 1.000!'
     if (errMsg === 'INSUFFICIENT_BALANCE') errMsg = 'Saldo dompet Anda tidak cukup!'
@@ -94,12 +93,17 @@ app.post('/order/create', async (c) => {
     
     return c.redirect(`/user/order/${pid}?error=${encodeURIComponent(errMsg)}`)
   }
-})
+}
+
+// 🎯 DAFTARKAN DUA URL SEKALIGUS (Anti 404!)
+app.post('/order/create', createOrderHandler)
+app.post('/transaction/create', createOrderHandler)
+
 
 // ====================================================================
-// ROUTER PEMBAYARAN TAGIHAN (Fase Kedua Pascabayar)
+// 🔥 FUNGSI UTAMA PELUNASAN TAGIHAN PASCABAYAR
 // ====================================================================
-app.post('/order/pay', async (c) => {
+const payOrderHandler = async (c: any) => {
   try {
     const userId = c.get('ui_user_id')
     const body = await c.req.parseBody()
@@ -113,6 +117,10 @@ app.post('/order/pay', async (c) => {
     }
     return c.redirect(`/user/history?error=${encodeURIComponent(error.message)}`)
   }
-})
+}
+
+// 🎯 DAFTARKAN DUA URL SEKALIGUS (Anti 404!)
+app.post('/order/pay', payOrderHandler)
+app.post('/transaction/pay', payOrderHandler)
 
 export default app
