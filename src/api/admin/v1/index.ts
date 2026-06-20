@@ -320,15 +320,16 @@ app.post('/products/sync-okeconnect', async (c) => {
 
     // 3. EKSEKUSI PRODUK: UPSERT KUNCI GANDA MUTLAK
     const upsertStmt = `
-      INSERT INTO products (category_id, provider_id, provider_product_code, name, description, stock_type, order_type, price, status, provider_status, is_visible) 
-      VALUES (?, ?, ?, ?, ?, 'general', ?, ?, 'active', ?, ?)
+      INSERT INTO products (category_id, provider_id, provider_product_code, name, description, stock_type, order_type, price, status, provider_status, is_visible, is_open_amount) 
+      VALUES (?, ?, ?, ?, ?, 'general', ?, ?, 'active', ?, ?, ?)
       ON CONFLICT(provider_id, provider_product_code) DO UPDATE SET 
         price = excluded.price, 
         provider_status = excluded.provider_status, 
         name = excluded.name,
         description = excluded.description,
         order_type = excluded.order_type,
-        is_visible = excluded.is_visible
+        is_visible = excluded.is_visible,
+        is_open_amount = excluded.is_open_amount
     `;
 
     const statements = [];
@@ -342,6 +343,15 @@ app.post('/products/sync-okeconnect', async (c) => {
       let finalSellPrice = 0;
       let isVis = 1;
 
+      // 🛑 LOGIKA PINTAR DETEKSI BEBAS NOMINAL
+      // Mendeteksi dari nama yang mengandung kata "Bebas Nominal" atau kode yang diawali "BBS" / "BTRF" / "CTRF"
+      const isOpenAmount = (
+        pName.toUpperCase().includes('BEBAS NOMINAL') || 
+        pCode.toUpperCase().startsWith('BBS') || 
+        pCode.toUpperCase() === 'BTRF' || 
+        pCode.toUpperCase() === 'CTRF'
+      ) ? 1 : 0;
+
       if (basePrice === 0 || pCode.toUpperCase().startsWith('INQ')) {
         oType = 'inquiry';
         finalSellPrice = 0;
@@ -352,7 +362,8 @@ app.post('/products/sync-okeconnect', async (c) => {
         isVis = 0;
       } else {
         oType = 'prepaid';
-        finalSellPrice = basePrice + defaultMargin;
+        // Jika Bebas Nominal, harga di database adalah BIAYA ADMIN/MARKUP (bukan harga mati)
+        finalSellPrice = isOpenAmount ? basePrice : (basePrice + defaultMargin);
         isVis = 1;
       }
       
@@ -362,7 +373,7 @@ app.post('/products/sync-okeconnect', async (c) => {
       const brandId = slugToId.get(brandSlug);
 
       statements.push(c.env.DB.prepare(upsertStmt).bind(
-          brandId, providerId, pCode, pName, pDesc, oType, finalSellPrice, pProvStatus, isVis
+          brandId, providerId, pCode, pName, pDesc, oType, finalSellPrice, pProvStatus, isVis, isOpenAmount
       ));
     }
 
