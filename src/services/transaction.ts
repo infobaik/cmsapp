@@ -1,6 +1,5 @@
 import { dispatchProviderOrder } from './providers/index'
 
-// Fungsi Pemotong Saldo Aman (Anti-Nyangkut)
 async function atomicDeductWallet(db: D1Database, userId: number, amount: number) {
   const query = `
     UPDATE wallets 
@@ -15,7 +14,7 @@ async function atomicDeductWallet(db: D1Database, userId: number, amount: number
 }
 
 // ========================================================================
-// 1. GERBANG UTAMA TRANSAKSI BARU (Satu Query Untuk Semua)
+// 1. GERBANG UTAMA TRANSAKSI BARU
 // ========================================================================
 export async function processNewOrder(
   db: D1Database, 
@@ -23,9 +22,8 @@ export async function processNewOrder(
   productId: number, 
   customerNumber: string, 
   idempotencyKey: string,
-  inputAmount: number = 0 // Parameter Bebas Nominal
+  inputAmount: number = 0
 ) {
-  // SATU KALI PEMANGGILAN DATABASE UNTUK MENGAMBIL SELURUH DATA PRODUK & PROVIDER
   const query = `
     SELECT p.price, p.order_type, p.status, p.provider_product_code, p.is_open_amount,
            pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url 
@@ -34,10 +32,8 @@ export async function processNewOrder(
     WHERE p.id = ?
   `
   const product = await db.prepare(query).bind(productId).first()
-  
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
 
-  // MEMBELAH JALUR SECARA OTONOM:
   if (product.order_type === 'prepaid') {
     return await executePrepaidLogics(db, userId, product, productId, customerNumber, idempotencyKey, inputAmount)
   } else if (product.order_type === 'inquiry' || product.order_type === 'postpaid') {
@@ -47,18 +43,19 @@ export async function processNewOrder(
   }
 }
 
-// --- SUB-FUNGSI: PREPAID (PULSA/KUOTA) & BEBAS NOMINAL ---
+// --- SUB-FUNGSI: PREPAID & BEBAS NOMINAL ---
 async function executePrepaidLogics(db: D1Database, userId: number, product: any, productId: number, customerNumber: string, idempotencyKey: string, inputAmount: number) {
   const trxId = `PAS-${userId}-${Date.now()}`
   
   let totalPrice = product.price as number
+  
+  // 🔥 PERBAIKAN FATAL: KODE PRODUK TETAP MURNI (Contoh: BBSDN)
   let paymentProductCode = product.provider_product_code as string
 
-  // Logika Bebas Nominal (Harga DB sebagai Admin, input user dijumlahkan)
   if (product.is_open_amount === 1) {
     if (!inputAmount || inputAmount < 1000) throw new Error('NOMINAL_MINIMAL_1000')
     totalPrice = inputAmount + (product.price as number)
-    paymentProductCode = `${product.provider_product_code}${inputAmount}`
+    // KODE TIDAK DIGABUNG! paymentProductCode tetap murni!
   }
 
   const insertTrx = `
@@ -75,15 +72,15 @@ async function executePrepaidLogics(db: D1Database, userId: number, product: any
   }
 
   try {
+    // 🔥 PERBAIKAN FATAL: Kita lemparkan 'inputAmount' di akhir agar diterima Provider sebagai QTY!
     const providerResult = await dispatchProviderOrder(
       product.provider_name as string, 'payment',
       { endpoint: product.api_endpoint, key: product.api_key, secret: product.api_secret, proxy_url: product.proxy_url },
-      paymentProductCode, customerNumber, trxId
+      paymentProductCode, customerNumber, trxId, inputAmount
     )
 
     let rawText = typeof providerResult.raw_response === 'string' ? providerResult.raw_response : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
 
-    // Logika Masking Error & Auto-Refund (Tetap Utuh)
     if (rawText.toUpperCase().includes('GAGAL')) {
        const customLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
        await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(totalPrice, userId).run();
@@ -104,7 +101,7 @@ async function executePrepaidLogics(db: D1Database, userId: number, product: any
   }
 }
 
-// --- SUB-FUNGSI: INQUIRY / CEK TAGIHAN PASCABAYAR ---
+// --- SUB-FUNGSI: INQUIRY / CEK TAGIHAN ---
 async function executeInquiryLogics(db: D1Database, userId: number, product: any, productId: number, customerNumber: string, idempotencyKey: string) {
   const trxId = `PAS-${userId}-${Date.now()}`
 
@@ -115,11 +112,9 @@ async function executeInquiryLogics(db: D1Database, userId: number, product: any
   )
 
   let rawText = typeof inquiryResult.raw_response === 'string' ? inquiryResult.raw_response : (inquiryResult.raw_response?.raw_text || JSON.stringify(inquiryResult.raw_response));
-
   const adminMarkup = product.price as number
   const billAmount = 0
   const totalPrice = adminMarkup
-  
   let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
   let finalStatus = 'processing';
 
@@ -138,12 +133,11 @@ async function executeInquiryLogics(db: D1Database, userId: number, product: any
   ).run()
 
   if (finalStatus === 'failed') throw new Error(cleanLog);
-
   return { type: 'inquiry', trxId, message: cleanLog }
 }
 
 // ========================================================================
-// 2. PROSES PELUNASAN TAGIHAN PASCABAYAR (Fase Kedua Pascabayar)
+// 2. PROSES PELUNASAN TAGIHAN PASCABAYAR
 // ========================================================================
 export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: string) {
   const trxQuery = `
@@ -155,16 +149,11 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
     WHERE t.id = ? AND t.user_id = ?
   `
   const trx = await db.prepare(trxQuery).bind(oldTrxId, userId).first()
-  
   if (!trx) throw new Error('TRANSACTION_NOT_FOUND')
   if (trx.status !== 'waiting_payment') throw new Error('TRANSACTION_ALREADY_PROCESSED')
 
   const newPaymentTrxId = `PAS-${userId}-${Date.now()}`
-
-  const lockResult = await db.prepare(`
-    UPDATE transactions SET id = ?, status = 'processing' WHERE id = ? AND status = 'waiting_payment'
-  `).bind(newPaymentTrxId, oldTrxId).run()
-  
+  const lockResult = await db.prepare(`UPDATE transactions SET id = ?, status = 'processing' WHERE id = ? AND status = 'waiting_payment'`).bind(newPaymentTrxId, oldTrxId).run()
   if (lockResult.meta.changes === 0) throw new Error('TRANSACTION_ALREADY_PROCESSED')
 
   try {
@@ -175,9 +164,7 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
   }
 
   let paymentProductCode = (trx.provider_product_code as string).toUpperCase();
-  if (paymentProductCode.startsWith('C')) {
-     paymentProductCode = 'B' + paymentProductCode.substring(1);
-  }
+  if (paymentProductCode.startsWith('C')) paymentProductCode = 'B' + paymentProductCode.substring(1);
 
   try {
     const providerResult = await dispatchProviderOrder(
