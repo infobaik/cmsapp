@@ -10,25 +10,24 @@ async function atomicDeductWallet(db: D1Database, userId: number, amount: number
   `
   const result = await db.prepare(query).bind(amount, userId, amount).first()
 
-  if (!result) {
-    throw new Error('INSUFFICIENT_BALANCE')
-  }
-
+  if (!result) throw new Error('INSUFFICIENT_BALANCE')
   return result.balance_available as number
 }
 
 // ========================================================================
-// 1. PROSES ORDER PREPAID (PULSA/KUOTA)
+// 1. GERBANG UTAMA TRANSAKSI BARU (Satu Query Untuk Semua)
 // ========================================================================
-export async function processPrepaidOrder(
+export async function processNewOrder(
   db: D1Database, 
   userId: number, 
   productId: number, 
   customerNumber: string, 
-  idempotencyKey: string
+  idempotencyKey: string,
+  inputAmount: number = 0 // Parameter Bebas Nominal
 ) {
+  // SATU KALI PEMANGGILAN DATABASE UNTUK MENGAMBIL SELURUH DATA PRODUK & PROVIDER
   const query = `
-    SELECT p.price, p.order_type, p.status, p.provider_product_code,
+    SELECT p.price, p.order_type, p.status, p.provider_product_code, p.is_open_amount,
            pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url 
     FROM products p
     JOIN providers pr ON p.provider_id = pr.id
@@ -37,10 +36,30 @@ export async function processPrepaidOrder(
   const product = await db.prepare(query).bind(productId).first()
   
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
-  if (product.order_type !== 'prepaid') throw new Error('INVALID_ORDER_TYPE')
 
+  // MEMBELAH JALUR SECARA OTONOM:
+  if (product.order_type === 'prepaid') {
+    return await executePrepaidLogics(db, userId, product, productId, customerNumber, idempotencyKey, inputAmount)
+  } else if (product.order_type === 'inquiry' || product.order_type === 'postpaid') {
+    return await executeInquiryLogics(db, userId, product, productId, customerNumber, idempotencyKey)
+  } else {
+    throw new Error('INVALID_ORDER_TYPE')
+  }
+}
+
+// --- SUB-FUNGSI: PREPAID (PULSA/KUOTA) & BEBAS NOMINAL ---
+async function executePrepaidLogics(db: D1Database, userId: number, product: any, productId: number, customerNumber: string, idempotencyKey: string, inputAmount: number) {
   const trxId = `PAS-${userId}-${Date.now()}`
-  const totalPrice = product.price as number
+  
+  let totalPrice = product.price as number
+  let paymentProductCode = product.provider_product_code as string
+
+  // Logika Bebas Nominal (Harga DB sebagai Admin, input user dijumlahkan)
+  if (product.is_open_amount === 1) {
+    if (!inputAmount || inputAmount < 1000) throw new Error('NOMINAL_MINIMAL_1000')
+    totalPrice = inputAmount + (product.price as number)
+    paymentProductCode = `${product.provider_product_code}${inputAmount}`
+  }
 
   const insertTrx = `
     INSERT INTO transactions (id, user_id, product_id, customer_number, order_type, total_price, status, idempotency_key)
@@ -57,42 +76,25 @@ export async function processPrepaidOrder(
 
   try {
     const providerResult = await dispatchProviderOrder(
-      product.provider_name as string,
-      'payment',
-      { 
-        endpoint: product.api_endpoint as string, 
-        key: product.api_key as string, 
-        secret: product.api_secret as string,
-        proxy_url: product.proxy_url as string | null
-      },
-      product.provider_product_code as string,
-      customerNumber,
-      trxId
+      product.provider_name as string, 'payment',
+      { endpoint: product.api_endpoint, key: product.api_key, secret: product.api_secret, proxy_url: product.proxy_url },
+      paymentProductCode, customerNumber, trxId
     )
 
-    let rawText = typeof providerResult.raw_response === 'string' 
-      ? providerResult.raw_response 
-      : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
+    let rawText = typeof providerResult.raw_response === 'string' ? providerResult.raw_response : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
 
-    // 🛑 LOGIKA ERROR MASKING
+    // Logika Masking Error & Auto-Refund (Tetap Utuh)
     if (rawText.toUpperCase().includes('GAGAL')) {
        const customLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
-       
-       // Refund Saldo
        await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(totalPrice, userId).run();
-       
-       // Gagalkan Transaksi
-       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`)
-         .bind(JSON.stringify(providerResult.raw_response), customLog, trxId).run();
-         
+       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), customLog, trxId).run();
        throw new Error(customLog);
     }
 
     let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
-    await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ?, server_log = ? WHERE id = ?`)
-      .bind(JSON.stringify(providerResult.raw_response), cleanLog, trxId).run()
+    await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), cleanLog, trxId).run()
 
-    return { success: true, trxId, sn: providerResult.sn }
+    return { type: 'prepaid', success: true, trxId, sn: providerResult.sn }
   } catch (providerError: any) {
     if (providerError.message !== "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!") {
         await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(totalPrice, userId).run()
@@ -102,58 +104,22 @@ export async function processPrepaidOrder(
   }
 }
 
-// ========================================================================
-// 2. PROSES CEK TAGIHAN POSTPAID / INQUIRY
-// ========================================================================
-export async function createPostpaidInquiry(
-  db: D1Database, 
-  userId: number, 
-  productId: number, 
-  customerNumber: string, 
-  idempotencyKey: string
-) {
-  const query = `
-    SELECT p.price, p.order_type, p.status, p.provider_product_code,
-           pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url 
-    FROM products p
-    JOIN providers pr ON p.provider_id = pr.id
-    WHERE p.id = ?
-  `
-  const product = await db.prepare(query).bind(productId).first()
-  
-  if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_AVAILABLE')
-  if (product.order_type !== 'inquiry' && product.order_type !== 'postpaid') throw new Error('INVALID_ORDER_TYPE')
-
+// --- SUB-FUNGSI: INQUIRY / CEK TAGIHAN PASCABAYAR ---
+async function executeInquiryLogics(db: D1Database, userId: number, product: any, productId: number, customerNumber: string, idempotencyKey: string) {
   const trxId = `PAS-${userId}-${Date.now()}`
 
   const inquiryResult = await dispatchProviderOrder(
-    product.provider_name as string,
-    'inquiry',
-    { 
-      endpoint: product.api_endpoint as string, 
-      key: product.api_key as string, 
-      secret: product.api_secret as string,
-      proxy_url: product.proxy_url as string | null
-    },
-    product.provider_product_code as string,
-    customerNumber,
-    trxId
+    product.provider_name as string, 'inquiry',
+    { endpoint: product.api_endpoint, key: product.api_key, secret: product.api_secret, proxy_url: product.proxy_url },
+    product.provider_product_code as string, customerNumber, trxId
   )
 
-  let rawText = '';
-  if (typeof inquiryResult.raw_response === 'string') {
-     rawText = inquiryResult.raw_response;
-  } else if (inquiryResult.raw_response?.raw_text) {
-     rawText = inquiryResult.raw_response.raw_text;
-  } else {
-     rawText = JSON.stringify(inquiryResult.raw_response);
-  }
+  let rawText = typeof inquiryResult.raw_response === 'string' ? inquiryResult.raw_response : (inquiryResult.raw_response?.raw_text || JSON.stringify(inquiryResult.raw_response));
 
   const adminMarkup = product.price as number
   const billAmount = 0
   const totalPrice = adminMarkup
   
-  // 🛑 LOGIKA ERROR MASKING UNTUK CEK TAGIHAN
   let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
   let finalStatus = 'processing';
 
@@ -171,15 +137,13 @@ export async function createPostpaidInquiry(
     JSON.stringify(inquiryResult.raw_response), cleanLog, idempotencyKey
   ).run()
 
-  if (finalStatus === 'failed') {
-     throw new Error(cleanLog);
-  }
+  if (finalStatus === 'failed') throw new Error(cleanLog);
 
-  return { trxId, customerName: '-', billAmount, adminMarkup, totalPrice, message: cleanLog }
+  return { type: 'inquiry', trxId, message: cleanLog }
 }
 
 // ========================================================================
-// 3. PROSES BAYAR TAGIHAN POSTPAID
+// 2. PROSES PELUNASAN TAGIHAN PASCABAYAR (Fase Kedua Pascabayar)
 // ========================================================================
 export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: string) {
   const trxQuery = `
@@ -198,14 +162,10 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
   const newPaymentTrxId = `PAS-${userId}-${Date.now()}`
 
   const lockResult = await db.prepare(`
-    UPDATE transactions 
-    SET id = ?, status = 'processing' 
-    WHERE id = ? AND status = 'waiting_payment'
+    UPDATE transactions SET id = ?, status = 'processing' WHERE id = ? AND status = 'waiting_payment'
   `).bind(newPaymentTrxId, oldTrxId).run()
   
-  if (lockResult.meta.changes === 0) {
-     throw new Error('TRANSACTION_ALREADY_PROCESSED')
-  }
+  if (lockResult.meta.changes === 0) throw new Error('TRANSACTION_ALREADY_PROCESSED')
 
   try {
     await atomicDeductWallet(db, userId, trx.total_price as number)
@@ -222,39 +182,21 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
   try {
     const providerResult = await dispatchProviderOrder(
       trx.provider_name as string, 'payment',
-      { 
-        endpoint: trx.api_endpoint as string, 
-        key: trx.api_key as string, 
-        secret: trx.api_secret as string,
-        proxy_url: trx.proxy_url as string | null 
-      },
-      paymentProductCode,
-      trx.customer_number as string, 
-      newPaymentTrxId
+      { endpoint: trx.api_endpoint as string, key: trx.api_key as string, secret: trx.api_secret as string, proxy_url: trx.proxy_url as string | null },
+      paymentProductCode, trx.customer_number as string, newPaymentTrxId
     )
 
-    let rawText = typeof providerResult.raw_response === 'string' 
-      ? providerResult.raw_response 
-      : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
+    let rawText = typeof providerResult.raw_response === 'string' ? providerResult.raw_response : (providerResult.raw_response?.raw_text || JSON.stringify(providerResult.raw_response));
 
-    // 🛑 LOGIKA ERROR MASKING UNTUK PEMBAYARAN TAGIHAN
     if (rawText.toUpperCase().includes('GAGAL')) {
        const customLog = "GAGAL. Sistem sedang gangguan. Silahkan coba beberapa saat lagi!";
-       
-       // Refund Saldo
        await db.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(trx.total_price, userId).run();
-       
-       // Gagalkan Transaksi
-       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`)
-         .bind(JSON.stringify(providerResult.raw_response), customLog, newPaymentTrxId).run();
-         
+       await db.prepare(`UPDATE transactions SET status = 'failed', provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), customLog, newPaymentTrxId).run();
        throw new Error(customLog);
     }
 
     let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
-
-    await db.prepare(`UPDATE transactions SET provider_response = ?, server_log = ? WHERE id = ?`)
-      .bind(JSON.stringify(providerResult.raw_response), cleanLog, newPaymentTrxId).run()
+    await db.prepare(`UPDATE transactions SET provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), cleanLog, newPaymentTrxId).run()
 
     return { success: true, trxId: newPaymentTrxId, sn: providerResult.sn }
   } catch (providerError: any) {
