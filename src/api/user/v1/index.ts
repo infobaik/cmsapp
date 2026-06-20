@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getCookie, deleteCookie } from 'hono/cookie'
-import { processPrepaidOrder, createPostpaidInquiry, payPostpaidBill } from '../../../services/transaction'
+import { processNewOrder, payPostpaidBill } from '../../../services/transaction'
 
 const app = new Hono()
 
@@ -60,7 +60,9 @@ app.post('/wallet/deposit', async (c) => {
   }
 })
 
-// PERBAIKAN: Router cerdas pemisah Jalur Prepaid dan Jalur Inquiry
+// ====================================================================
+// ROUTER PEMBUATAN TRANSAKSI (Prepaid, Open Amount, & Inquiry)
+// ====================================================================
 app.post('/order/create', async (c) => {
   let pid = ''
   try {
@@ -70,34 +72,33 @@ app.post('/order/create', async (c) => {
     const productId = Number(body.product_id)
     pid = String(productId)
     const customerNumber = body.customer_number as string
+    const inputAmount = Number(body.amount) || 0 // Tangkap Nominal untuk Open Amount
     const idempotencyKey = crypto.randomUUID() 
 
-    // Cek tipe order dari database terlebih dahulu
-    const product = await c.env.DB.prepare(`SELECT order_type FROM products WHERE id = ?`).bind(productId).first()
-    if (!product) throw new Error('PRODUCT_NOT_FOUND')
+    // Serahkan SELURUH PENGECEKAN ke Service Transaksi
+    const orderResult = await processNewOrder(c.env.DB, userId, productId, customerNumber, idempotencyKey, inputAmount)
 
-    if (product.order_type === 'prepaid') {
-      await processPrepaidOrder(c.env.DB, userId, productId, customerNumber, idempotencyKey)
+    // Arahkan halaman sesuai jenis output yang dikembalikan mesin
+    if (orderResult.type === 'prepaid') {
       return c.redirect('/user/history?success=transaksi_berhasil')
-      
-    } else if (product.order_type === 'inquiry') {
-      await createPostpaidInquiry(c.env.DB, userId, productId, customerNumber, idempotencyKey)
-      return c.redirect('/user/history?success=cek_tagihan_berhasil_silakan_bayar')
-      
     } else {
-      throw new Error('INVALID_ORDER_TYPE')
+      return c.redirect('/user/history?success=cek_tagihan_berhasil_silakan_bayar')
     }
 
   } catch (error: any) {
-    if (error.message === 'INSUFFICIENT_BALANCE') {
-      return c.redirect(`/user/order/${pid}?error=saldo_kurang`)
-    }
-    // PERBAIKAN: Melemparkan eror asli agar ketahuan jika provider yang bermasalah (bukan sekedar system_error)
-    return c.redirect(`/user/order/${pid}?error=${encodeURIComponent(error.message)}`)
+    // Tangkap kode eror spesifik
+    let errMsg = error.message
+    if (errMsg === 'NOMINAL_MINIMAL_1000') errMsg = 'Nominal topup minimal adalah Rp 1.000!'
+    if (errMsg === 'INSUFFICIENT_BALANCE') errMsg = 'Saldo dompet Anda tidak cukup!'
+    if (errMsg === 'PRODUCT_NOT_AVAILABLE') errMsg = 'Produk sedang gangguan/tidak aktif!'
+    
+    return c.redirect(`/user/order/${pid}?error=${encodeURIComponent(errMsg)}`)
   }
 })
 
-// TAMBAHAN BARU: Endpoint untuk mengeksekusi pembayaran tagihan pascabayar dari halaman Riwayat (History)
+// ====================================================================
+// ROUTER PEMBAYARAN TAGIHAN (Fase Kedua Pascabayar)
+// ====================================================================
 app.post('/order/pay', async (c) => {
   try {
     const userId = c.get('ui_user_id')
