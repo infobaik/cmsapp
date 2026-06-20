@@ -11,7 +11,7 @@ export default createRoute(async (c) => {
   const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
   if (!category) return c.notFound()
 
-  // 2. AMBIL PENGATURAN UI GLOBAL (Agar desainnya sama dengan Dashboard Induk)
+  // 2. AMBIL PENGATURAN UI GLOBAL
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
   sysSettings.forEach((row: any) => { settings[row.key] = row.value })
@@ -24,7 +24,7 @@ export default createRoute(async (c) => {
     ORDER BY name ASC
   `).bind(id).all()
 
-  // 4. AMBIL PRODUK (Hanya dipanggil JIKA di dalam kategori ini tidak ada sub-kategori lagi)
+  // 4. AMBIL PRODUK (Tarik semua kolom termasuk provider_product_code)
   let products: any[] = []
   if (subCategories.length === 0) {
     const { results } = await c.env.DB.prepare(`
@@ -37,15 +37,19 @@ export default createRoute(async (c) => {
     products = results
   }
 
-  // 5. LOGIKA VISIBILITAS KATEGORI (Turunan dari Pengaturan Global)
-  const showCover = settings.ui_cat_show_cover === '1'
-  const showIcon = settings.ui_cat_show_icon === '1'
-  const deviceVis = settings.ui_cat_device || 'all'
-  const forceFallback = !showCover && !showIcon
+  // 5. LOGIKA VISIBILITAS OTONOM
+  const coverVis = settings.ui_cat_cover_vis || 'all'
+  const iconVis = settings.ui_cat_icon_vis || 'all'
 
-  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4 "
-  if (deviceVis === 'desktop') wrapperClass += "hidden md:grid"
-  if (deviceVis === 'mobile') wrapperClass += "grid md:hidden"
+  const getVisClass = (vis: string, defaultDisplay: string) => {
+    if (vis === 'hidden') return 'hidden '
+    if (vis === 'desktop') return `hidden md:${defaultDisplay} `
+    if (vis === 'mobile') return `${defaultDisplay} md:hidden `
+    return `${defaultDisplay} `
+  }
+
+  const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+  const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-6">
@@ -69,40 +73,31 @@ export default createRoute(async (c) => {
       <div class="flex items-center space-x-2 text-sm text-slate-500 px-1">
         <a href="/user/dashboard" class="hover:text-indigo-600 transition-colors font-medium">Beranda</a>
         <span>&rsaquo;</span>
-        <span class="font-semibold text-slate-800">{category.name}</span>
+        <span class="font-semibold text-slate-800">{category.name as string}</span>
       </div>
 
-      {/* KONDISIONAL RENDER: Menampilkan Grid Sub-Kategori atau List Produk */}
       {subCategories.length > 0 ? (
-        /* ========================================================= */
-        /* 🎬 GRID SUB-KATEGORI ALA POSTER FILM (SAMA PERSIS!) 🎬 */
-        /* ========================================================= */
-        <div class={wrapperClass}>
+        /* GRID SUB-KATEGORI ALA POSTER FILM */
+        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
           {subCategories.map((cat: any) => (
             <a 
               href={`/user/kategori/${cat.id}`} 
-              class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
+              class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
             >
-              {showCover ? (
-                <img 
-                  src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
-                  alt={cat.name} 
-                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
-                />
-              ) : (
-                <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
+              {coverVis !== 'hidden' && cat.cover_url && (
+                <img src={cat.cover_url} alt={cat.name} class={coverClass} />
               )}
-
-              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
-
-              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start">
-                {(showIcon || forceFallback) && (
-                   <div class="w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 flex items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors">
-                     <img 
-                       src={cat.image_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781793434/enccb9r0usvm70mydthm.png'} 
-                       alt={cat.name} 
-                       class="w-full h-full object-contain drop-shadow-md" 
-                     />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
+                {iconVis !== 'hidden' && (
+                   <div class={iconClass}>
+                     {cat.image_url ? (
+                       <img src={cat.image_url} alt={cat.name} class="w-full h-full object-contain drop-shadow-md" />
+                     ) : (
+                       <div class="w-full h-full bg-slate-500/50 rounded flex items-center justify-center">
+                         <span class="text-white text-xs font-bold">Ico</span>
+                       </div>
+                     )}
                    </div>
                 )}
                 <h3 class="font-bold text-white text-[12px] md:text-[14px] leading-snug line-clamp-2 drop-shadow-lg group-hover:text-indigo-300 transition-colors">
@@ -114,21 +109,50 @@ export default createRoute(async (c) => {
         </div>
       ) : (
         /* ========================================================= */
-        /* 🛍️ DAFTAR PRODUK (Jika ini adalah kategori paling akhir) 🛍️ */
+        /* 🛍️ DAFTAR PRODUK (DENGAN KODE PRODUK INLINE RINGKAS) 🛍️ */
         /* ========================================================= */
         <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div class="p-4 bg-slate-50 border-b border-slate-100">
-            <h3 class="font-bold text-slate-800">Pilih Produk {category.name}</h3>
+            <h3 class="font-bold text-slate-800">Pilih Produk {category.name as string}</h3>
           </div>
           <div class="divide-y divide-slate-100">
             {products.length > 0 ? products.map((prod: any) => (
               <a href={`/user/order/${prod.id}`} class="flex items-center justify-between p-4 hover:bg-indigo-50/50 transition-colors group">
-                <div>
-                  <h4 class="font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors text-sm md:text-base">{prod.name}</h4>
-                  <p class="text-xs text-slate-500 mt-1">{prod.description || 'Proses Cepat & Otomatis'}</p>
+                <div class="flex-1 pr-4">
+                  <h4 class="font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors text-sm md:text-base leading-tight">
+                    {prod.name}
+                  </h4>
+                  
+                  {/* 🔥 INI DIA: Kolom Gabungan Ringkas (Kode + Label) */}
+                  <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <span class="text-[10px] font-bold font-mono bg-slate-200/70 text-slate-600 px-1.5 py-0.5 rounded border border-slate-300/50">
+                      {prod.provider_product_code}
+                    </span>
+
+                    {prod.is_open_amount === 1 ? (
+                      <span class="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                        Input Bebas
+                      </span>
+                    ) : (
+                      <span class="text-[11px] text-slate-500 line-clamp-1">
+                        {prod.description || 'Proses Cepat Otomatis'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div class="text-right ml-4 shrink-0">
-                  <div class="font-bold text-indigo-600 text-sm md:text-base">Rp {prod.price.toLocaleString('id-ID')}</div>
+                
+                {/* Blok Harga Pintar */}
+                <div class="text-right shrink-0 flex flex-col items-end justify-center">
+                  {prod.is_open_amount === 1 ? (
+                    <>
+                      <div class="font-bold text-slate-700 text-sm md:text-base">+ Rp {prod.price.toLocaleString('id-ID')}</div>
+                      <span class="text-[10px] text-slate-400">Biaya Layanan</span>
+                    </>
+                  ) : prod.order_type === 'inquiry' ? (
+                    <div class="font-bold text-indigo-600 text-sm md:text-base">Cek Tagihan</div>
+                  ) : (
+                    <div class="font-bold text-indigo-600 text-sm md:text-base">Rp {prod.price.toLocaleString('id-ID')}</div>
+                  )}
                 </div>
               </a>
             )) : (
