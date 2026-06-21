@@ -18,7 +18,6 @@ app.get('/', async (c) => {
       localStatus = 'failed'
     }
 
-    // 🔥 PERBAIKAN: Tarik kolom 'status' saat ini untuk mengecek apakah sudah refund atau belum
     const trx = await c.env.DB.prepare(`
       SELECT user_id, order_type, admin_markup, total_price, bill_amount, status 
       FROM transactions 
@@ -70,13 +69,27 @@ app.get('/', async (c) => {
             `).bind(localStatus, message, cleanLog, trxId)
           )
 
-          // Auto-Refund jika transaksi gagal, TAPI pastikan sebelumnya belum gagal (anti double-refund)
+          // 🔥 PERBAIKAN FATAL: Auto-Refund & Pencatatan Transparan di Ledger
           if (localStatus === 'failed' && trx.status !== 'failed') {
-            batchStatements.push(
-              c.env.DB.prepare(`
-                UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?
-              `).bind(trx.total_price, trx.user_id)
-            )
+            // Ambil ID Wallet User terlebih dahulu
+            const wallet = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(trx.user_id).first();
+            
+            if (wallet) {
+                // 1. Kembalikan Saldo (Refund)
+                batchStatements.push(
+                  c.env.DB.prepare(`
+                    UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?
+                  `).bind(trx.total_price, trx.user_id)
+                );
+                
+                // 2. Catat Pemasukan (Credit) di Buku Besar
+                batchStatements.push(
+                  c.env.DB.prepare(`
+                    INSERT INTO wallet_transactions (wallet_id, amount, type, status, description) 
+                    VALUES (?, ?, 'credit', 'completed', ?)
+                  `).bind(wallet.id, trx.total_price, `Refund Otomatis Webhook: ${trxId}`)
+                );
+            }
           }
        }
        
