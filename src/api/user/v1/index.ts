@@ -38,13 +38,8 @@ app.post('/wallet/deposit', async (c) => {
     const body = await c.req.parseBody()
     const amount = Number(body.amount)
 
-    // Validasi minimal
-    if (amount < 10000) {
-      return c.json({ success: false, message: 'Minimal deposit Rp 10.000' }, 400);
-    }
-    // Validasi maksimal agar bebas MDR
-    if (amount > 499999) {
-      return c.json({ success: false, message: 'Maksimal deposit Rp 499.999' }, 400);
+    if (amount < 10000 || amount > 499999) {
+    return c.json({ success: false, message: 'Nominal deposit harus antara Rp 10.000 hingga Rp 499.999' }, 400);
     }
     
     const depositId = `DEP-${crypto.randomUUID().split('-')[0].toUpperCase()}`
