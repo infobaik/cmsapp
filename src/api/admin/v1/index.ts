@@ -256,6 +256,9 @@ app.post('/gateways/create', async (c) => {
 // ========================================================================
 // MESIN SYNC "KEBAL ERROR" DENGAN UPSERT (ANTI-UNIQUE CONSTRAINT)
 // ========================================================================
+// ========================================================================
+// MESIN SYNC "KEBAL ERROR" DENGAN UPSERT (ANTI-UNIQUE CONSTRAINT)
+// ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
     const body = await c.req.parseBody();
@@ -270,7 +273,6 @@ app.post('/products/sync-okeconnect', async (c) => {
     const items = Array.isArray(result) ? result : (result.data || []);
     if (!items || items.length === 0) return c.redirect('/admin/products?error=Data+JSON+Kosong');
 
-    // PERBAIKAN: Hapus filter type = 'product' karena kolom type sudah kita buang dari schema
     let dbCatsResult = await c.env.DB.prepare(`SELECT id, slug FROM categories`).all();
     let slugToId = new Map(dbCatsResult.results.map((c: any) => [c.slug, c.id]));
 
@@ -280,7 +282,6 @@ app.post('/products/sync-okeconnect', async (c) => {
     for (const parent of uniqueParents) {
       const slug = String(parent).toLowerCase().replace(/[^a-z0-9]+/g, '-');
       if (!slugToId.has(slug)) {
-         // PERBAIKAN: Insert tanpa kolom type
          parentStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug) VALUES (NULL, ?, ?) ON CONFLICT(slug) DO NOTHING`).bind(parent, slug));
          slugToId.set(slug, -1); 
       }
@@ -304,7 +305,6 @@ app.post('/products/sync-okeconnect', async (c) => {
       
       if (!slugToId.has(brandSlug)) {
          const parentId = slugToId.get(parentSlug);
-         // PERBAIKAN: Insert tanpa kolom type
          brandStatements.push(c.env.DB.prepare(`INSERT INTO categories (parent_id, name, slug) VALUES (?, ?, ?) ON CONFLICT(slug) DO NOTHING`).bind(parentId, brand, brandSlug));
          slugToId.set(brandSlug, -1);
       }
@@ -344,7 +344,6 @@ app.post('/products/sync-okeconnect', async (c) => {
       let isVis = 1;
 
       // 🛑 LOGIKA PINTAR DETEKSI BEBAS NOMINAL
-      // Mendeteksi dari nama yang mengandung kata "Bebas Nominal" atau kode yang diawali "BBS" / "BTRF" / "CTRF"
       const isOpenAmount = (
         pName.toUpperCase().includes('BEBAS NOMINAL') || 
         pCode.toUpperCase().startsWith('BBS') || 
@@ -362,8 +361,8 @@ app.post('/products/sync-okeconnect', async (c) => {
         isVis = 0;
       } else {
         oType = 'prepaid';
-        // Jika Bebas Nominal, harga di database adalah BIAYA ADMIN/MARKUP (bukan harga mati)
-        finalSellPrice = isOpenAmount ? basePrice : (basePrice + defaultMargin);
+        // 🔥 PERBAIKAN MUTLAK: Margin (Keuntungan Admin) HARUS SELALU DITAMBAHKAN apapun jenis produknya!
+        finalSellPrice = basePrice + defaultMargin;
         isVis = 1;
       }
       
