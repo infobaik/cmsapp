@@ -3,22 +3,29 @@ import { getUserWallet } from '../../../src/services/wallet'
 
 export default createRoute(async (c) => {
   const user = c.get('user')!
-  const wallet = await getUserWallet(c.env.DB, user.id) || { id: null, balance_available: 0, balance_pending: 0 }
   
+  // Ambil nominal saldo (tetap menggunakan fungsi bawaan Anda)
+  const wallet = await getUserWallet(c.env.DB, user.id) || { balance_available: 0, balance_pending: 0 }
+  
+  // 🔥 PERBAIKAN FATAL: Tarik ID Dompet secara paksa dan langsung dari Database!
+  const walletDb = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(user.id).first()
+
   const { results: gateways } = await c.env.DB.prepare(`SELECT code, name FROM payment_gateways WHERE status = 'active'`).all()
   
-  // 🔥 PERBAIKAN: Mengambil 10 Riwayat Saldo Terakhir dari Database
+  // 🔥 SEKARANG RIWAYAT PASTI MUNCUL KARENA KITA MENGGUNAKAN walletDb.id
   let transactions: any = [];
-  if (wallet.id) {
+  if (walletDb && walletDb.id) {
     const { results } = await c.env.DB.prepare(`
       SELECT amount, type, description, created_at 
       FROM wallet_transactions 
       WHERE wallet_id = ? 
       ORDER BY created_at DESC 
       LIMIT 10
-    `).bind(wallet.id).all();
+    `).bind(walletDb.id).all();
     transactions = results;
   }
+
+  const successMsg = c.req.query('success')
 
   return c.render(
     <div class="max-w-6xl mx-auto space-y-6">
@@ -27,6 +34,13 @@ export default createRoute(async (c) => {
         <h1 class="text-2xl font-bold text-slate-100">Dompet Digital</h1>
         <p class="text-sm text-slate-400">Kelola saldo dan riwayat deposit Anda.</p>
       </div>
+
+      {successMsg === 'deposit_created' && (
+        <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
+          <svg width="20" height="20" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Tiket Deposit berhasil dibuat. Silakan lakukan pembayaran.
+        </div>
+      )}
 
       {/* KARTU SALDO (GRID) */}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -50,7 +64,7 @@ export default createRoute(async (c) => {
           <form id="depositForm" method="POST" action="/api/user/v1/wallet/deposit" class="space-y-4">
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nominal Topup (Rp)</label>
-              <input type="number" id="depositAmount" name="amount" min="1000" placeholder="Min. 1000" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" />
+              <input type="number" id="depositAmount" name="amount" min="10000" placeholder="Min. 10000" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" />
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Metode Pembayaran</label>
@@ -84,7 +98,7 @@ export default createRoute(async (c) => {
           </div>
         </div>
 
-        {/* 🔥 KOLOM BARU: BUKU BESAR / RIWAYAT TRANSAKSI SALDO */}
+        {/* KOLOM BUKU BESAR / RIWAYAT TRANSAKSI SALDO */}
         <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl p-6">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Riwayat Transaksi Saldo</h2>
           <div class="space-y-4 max-h-[310px] overflow-y-auto pr-2">
