@@ -48,14 +48,11 @@ async function executePrepaidLogics(db: D1Database, userId: number, product: any
   const trxId = `PAS-${userId}-${Date.now()}`
   
   let totalPrice = product.price as number
-  
-  // 🔥 PERBAIKAN FATAL: KODE PRODUK TETAP MURNI (Contoh: BBSDN)
   let paymentProductCode = product.provider_product_code as string
 
   if (product.is_open_amount === 1) {
     if (!inputAmount || inputAmount < 1000) throw new Error('NOMINAL_MINIMAL_1000')
     totalPrice = inputAmount + (product.price as number)
-    // KODE TIDAK DIGABUNG! paymentProductCode tetap murni!
   }
 
   const insertTrx = `
@@ -72,7 +69,6 @@ async function executePrepaidLogics(db: D1Database, userId: number, product: any
   }
 
   try {
-    // 🔥 PERBAIKAN FATAL: Kita lemparkan 'inputAmount' di akhir agar diterima Provider sebagai QTY!
     const providerResult = await dispatchProviderOrder(
       product.provider_name as string, 'payment',
       { endpoint: product.api_endpoint, key: product.api_key, secret: product.api_secret, proxy_url: product.proxy_url },
@@ -89,7 +85,15 @@ async function executePrepaidLogics(db: D1Database, userId: number, product: any
     }
 
     let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
-    await db.prepare(`UPDATE transactions SET status = 'success', provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), cleanLog, trxId).run()
+    
+    // 🔥 PERBAIKAN FATAL: JANGAN SOK TAHU MENENTUKAN SUKSES!
+    // Biarkan status menjadi 'processing' kecuali API dengan tegas mengatakan 'SUKSES'
+    let initialStatus = 'processing';
+    if (rawText.toUpperCase().includes('SUKSES') || rawText.toUpperCase().includes('SUCCESS')) {
+        initialStatus = 'success';
+    }
+
+    await db.prepare(`UPDATE transactions SET status = ?, provider_response = ?, server_log = ? WHERE id = ?`).bind(initialStatus, JSON.stringify(providerResult.raw_response), cleanLog, trxId).run()
 
     return { type: 'prepaid', success: true, trxId, sn: providerResult.sn }
   } catch (providerError: any) {
@@ -183,7 +187,14 @@ export async function payPostpaidBill(db: D1Database, userId: number, oldTrxId: 
     }
 
     let cleanLog = rawText.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
-    await db.prepare(`UPDATE transactions SET provider_response = ?, server_log = ? WHERE id = ?`).bind(JSON.stringify(providerResult.raw_response), cleanLog, newPaymentTrxId).run()
+    
+    // 🔥 PERBAIKAN FATAL: STATUS AWAL JANGAN LANGSUNG SUCCESS!
+    let initialStatus = 'processing';
+    if (rawText.toUpperCase().includes('SUKSES') || rawText.toUpperCase().includes('SUCCESS') || rawText.toUpperCase().includes('LUNAS')) {
+        initialStatus = 'success';
+    }
+
+    await db.prepare(`UPDATE transactions SET status = ?, provider_response = ?, server_log = ? WHERE id = ?`).bind(initialStatus, JSON.stringify(providerResult.raw_response), cleanLog, newPaymentTrxId).run()
 
     return { success: true, trxId: newPaymentTrxId, sn: providerResult.sn }
   } catch (providerError: any) {
