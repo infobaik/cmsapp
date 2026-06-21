@@ -121,6 +121,24 @@ export default createRoute(async (c) => {
         </div>
 
         {/* ========================================== */}
+        {/* 🔥 BLOK BARU: PENGATURAN EMAIL BREVO 🔥 */}
+        {/* ========================================== */}
+        <div class="bg-[#18181b] border border-slate-800/60 p-6 rounded-2xl shadow-xl">
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3 flex items-center gap-2">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-amber-500"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+            Konfigurasi Notifikasi Email (Brevo)
+          </h2>
+          
+          <div class="space-y-5">
+            <div>
+              <label class="block text-xs font-semibold text-slate-500 mb-1.5">API Key Brevo (v3)</label>
+              <input type="text" name="brevo_api_key" value={settings.brevo_api_key || ''} placeholder="Contoh: xkeysib-12345abcdef..." class="w-full bg-[#121217] border border-slate-800/60 focus:border-amber-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono text-sm" />
+              <p class="text-[10px] text-slate-500 mt-1.5">API Key ini digunakan untuk mengirimkan resi dan Kode Voucher otomatis kepada pembeli Publik (Guest Order) melalui layanan Brevo/Sendinblue.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================== */}
         {/* TOMBOL SIMPAN GLOBAL */}
         {/* ========================================== */}
         <div class="sticky bottom-4 z-50">
