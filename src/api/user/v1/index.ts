@@ -129,7 +129,7 @@ app.post('/wallet/deposit', async (c) => {
     const body = await c.req.parseBody()
     const amount = Number(body.amount)
 
-    if (amount < 10000) return c.redirect('/user/wallet?error=minimal_10000')
+    if (amount < 1000) return c.redirect('/user/wallet?error=minimal_10000')
     
     const depositId = `DEP-${crypto.randomUUID().split('-')[0].toUpperCase()}`
 
