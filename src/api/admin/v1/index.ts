@@ -386,4 +386,54 @@ app.post('/products/sync-okeconnect', async (c) => {
   }
 })
 
+// ========================================================================
+// ROUTE PAYMENT GATEWAYS (SUDAH SESUAI SCHEMA.SQL 100%)
+// ========================================================================
+
+app.post('/gateways/create', async (c) => {
+  const body = await c.req.parseBody()
+  
+  // Tangkap form sesuai dengan schema
+  const name = body.name as string
+  const code = body.code as string
+  const apiEndpoint = body.api_endpoint as string
+  const apiKey = body.api_key as string
+  const secretKey = body.secret_key as string // 🔥 PERBAIKAN: Sesuai schema 'secret_key'
+
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO payment_gateways (name, code, api_endpoint, api_key, secret_key, status)
+      VALUES (?, ?, ?, ?, ?, 'active')
+    `).bind(name, code, apiEndpoint, apiKey, secretKey).run()
+    
+    return c.redirect('/admin/gateways?success=true')
+  } catch (error: any) {
+    return c.redirect(`/admin/gateways?error=failed`)
+  }
+})
+
+// 🔥 PERBAIKAN FATAL: Menambahkan route UPDATE yang sebelumnya saya lupakan!
+app.post('/gateways/:id/update', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.parseBody()
+  
+  const name = body.name as string
+  const code = body.code as string
+  const apiEndpoint = body.api_endpoint as string
+  const apiKey = body.api_key as string
+  const secretKey = body.secret_key as string
+  const status = body.status as string
+
+  try {
+    await c.env.DB.prepare(`
+      UPDATE payment_gateways 
+      SET name = ?, code = ?, api_endpoint = ?, api_key = ?, secret_key = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(name, code, apiEndpoint, apiKey, secretKey, status, id).run()
+    
+    return c.redirect(`/admin/gateways?success=updated`)
+  } catch (error: any) {
+    return c.redirect(`/admin/gateways/${id}?error=failed`)
+  }
+})
 export default app
