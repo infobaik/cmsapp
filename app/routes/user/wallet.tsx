@@ -4,15 +4,15 @@ import { getUserWallet } from '../../../src/services/wallet'
 export default createRoute(async (c) => {
   const user = c.get('user')!
   
-  // Ambil nominal saldo (tetap menggunakan fungsi bawaan Anda)
+  // Ambil nominal saldo
   const wallet = await getUserWallet(c.env.DB, user.id) || { balance_available: 0, balance_pending: 0 }
   
-  // 🔥 PERBAIKAN FATAL: Tarik ID Dompet secara paksa dan langsung dari Database!
+  // Tarik ID Dompet
   const walletDb = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(user.id).first()
 
   const { results: gateways } = await c.env.DB.prepare(`SELECT code, name FROM payment_gateways WHERE status = 'active'`).all()
   
-  // 🔥 SEKARANG RIWAYAT PASTI MUNCUL KARENA KITA MENGGUNAKAN walletDb.id
+  // Tarik riwayat transaksi
   let transactions: any = [];
   if (walletDb && walletDb.id) {
     const { results } = await c.env.DB.prepare(`
@@ -106,9 +106,12 @@ export default createRoute(async (c) => {
               <div class="flex items-center justify-between border-b border-slate-800/50 pb-3 last:border-0 last:pb-0">
                 <div class="flex-1 pr-4">
                   <p class="text-sm font-semibold text-slate-200 leading-tight mb-1">{tx.description || '-'}</p>
+                  
+                  {/* 🔥 PERBAIKAN WAKTU WIB (ASIA/JAKARTA) 🔥 */}
                   <p class="text-[10px] text-slate-500 font-mono">
-                    {new Date(tx.created_at).toLocaleString('id-ID')}
+                    {new Date(tx.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB
                   </p>
+
                 </div>
                 <div class={`text-sm font-bold shrink-0 ${tx.type === 'credit' ? 'text-emerald-400' : 'text-red-400'}`}>
                   {tx.type === 'credit' ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
