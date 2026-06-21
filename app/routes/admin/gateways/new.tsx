@@ -17,12 +17,18 @@ export default createRoute(async (c) => {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-2">Nama Layanan / Provider</label>
-              <input type="text" name="name" required placeholder="Contoh: Gopay Merchant / Midtrans" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none" />
+              <input type="text" name="name" required placeholder="Contoh: Qrispay / Gopay Merchant" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none" />
             </div>
             
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-2">Kode Internal (Tanpa Spasi)</label>
-              <input type="text" name="code" required placeholder="Contoh: gopay_qris" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono text-sm" />
+              <input type="text" name="code" required placeholder="Contoh: qrispay_v1" class="w-full bg-[#121217] border border-slate-800/60 focus:border-blue-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono text-sm" />
+            </div>
+
+            {/* 🔥 PERBAIKAN: FORM UNTUK API ENDPOINT (TADINYA TIDAK ADA!) */}
+            <div class="md:col-span-2">
+              <label class="block text-xs font-semibold text-amber-500 mb-2">URL Base Endpoint API</label>
+              <input type="url" name="api_endpoint" required placeholder="Contoh: https://qrispay.pages.dev/api" class="w-full bg-[#121217] border border-slate-800/60 focus:border-amber-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono" />
             </div>
 
             <div class="md:col-span-2 border-t border-slate-800/60 pt-6">
@@ -33,8 +39,9 @@ export default createRoute(async (c) => {
                   <input type="text" name="api_key" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-amber-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono" />
                 </div>
                 <div>
+                  {/* 🔥 PERBAIKAN: GANTI NAMA MENJADI secret_key */}
                   <label class="block text-xs font-semibold text-amber-500 mb-2">API Secret / Server Key</label>
-                  <input type="password" name="api_secret" class="w-full bg-[#121217] border border-slate-800/60 focus:border-amber-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono" placeholder="Kosongkan jika tidak diperlukan" />
+                  <input type="password" name="secret_key" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-amber-500/50 rounded-xl p-3 text-slate-200 outline-none font-mono" placeholder="Masukkan Secret Key" />
                 </div>
               </div>
             </div>
