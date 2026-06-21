@@ -12,14 +12,15 @@ app.get('/', async (c) => {
     let localStatus = 'processing'
     const upperMessage = message.toUpperCase()
     
-    if (upperMessage.includes('SUKSES') || upperMessage.includes('SUCCESS')) {
+    if (upperMessage.includes('SUKSES') || upperMessage.includes('SUCCESS') || upperMessage.includes('LUNAS')) {
       localStatus = 'success'
     } else if (upperMessage.includes('GAGAL') || upperMessage.includes('FAILED')) {
       localStatus = 'failed'
     }
 
+    // 🔥 PERBAIKAN: Tarik kolom 'status' saat ini untuk mengecek apakah sudah refund atau belum
     const trx = await c.env.DB.prepare(`
-      SELECT user_id, order_type, admin_markup, total_price 
+      SELECT user_id, order_type, admin_markup, total_price, bill_amount, status 
       FROM transactions 
       WHERE id = ?
     `).bind(trxId).first()
@@ -27,33 +28,23 @@ app.get('/', async (c) => {
     if (trx) {
        const batchStatements = []
 
-       // =====================================================================
-       // 🧹 1. LOGIKA EKSTRAKSI NAMA PELANGGAN & BLOK SN BERSIH
-       // =====================================================================
+       // 1. Ekstraksi Nomor SN Bersih
        let cleanLog = message;
-       // Regex ini memotong mulai dari "SN:" sampai tepat sebelum ". Saldo"
        const snMatch = message.match(/SN:\s*(.*?)(?=\.\s*Saldo|\.$|$)/i);
        
        if (snMatch) {
            cleanLog = "SN: " + snMatch[1];
        } else {
-           // Fallback aman jika kata SN tidak ada
            cleanLog = message.replace(/[\.\s,]*Saldo\s.*$/i, '').trim();
        }
 
-       // =====================================================================
-       // 🔥 2. LOGIKA POSTPAID (TAGIHAN) 🔥
-       // =====================================================================
-       // 👇 PERBAIKAN MUTLAK: Tambahkan pendeteksi 'inquiry' di sini!
-       if ((trx.order_type === 'inquiry' || trx.order_type === 'postpaid') && localStatus === 'success') {
+       // 2. FASE INQUIRY (CEK TAGIHAN SAJA)
+       if ((trx.order_type === 'inquiry' || trx.order_type === 'postpaid') && localStatus === 'success' && trx.bill_amount === 0) {
           
-          // Ekstrak nilai TTAG dari blok yang sudah bersih
           const tagMatch = cleanLog.match(/TTAG\:(\d+)/i) || cleanLog.match(/TAG\:(\d+)/i)
           const providerPrice = tagMatch ? Number(tagMatch[1]) : 0
 
           const newTotalPrice = providerPrice + Number(trx.admin_markup)
-          
-          // FORMAT FINAL: SN: H GOJALI B BURHAN/TAG:63740...MET:18163-18298. 66740
           const finalLog = `${cleanLog} ${providerPrice}`;
           
           batchStatements.push(
@@ -64,24 +55,23 @@ app.get('/', async (c) => {
                   total_price = ?, 
                   provider_response = ?,
                   server_log = ?
-              WHERE id = ? AND status != 'success'
+              WHERE id = ?
             `).bind(providerPrice, newTotalPrice, message, finalLog, trxId)
           )
        } 
-       // =====================================================================
-       // 🟢 3. LOGIKA PREPAID (PULSA/KUOTA) ATAU TRANSAKSI GAGAL
-       // =====================================================================
+       // 3. FASE PEMBAYARAN LUNAS ATAU PRABAYAR (PULSA/DANA)
        else {
+          // Biarkan Webhook menyuntikkan SN asli secara PAKSA!
           batchStatements.push(
             c.env.DB.prepare(`
               UPDATE transactions 
               SET status = ?, provider_response = ?, server_log = ?
-              WHERE id = ? AND status != 'success'
+              WHERE id = ?
             `).bind(localStatus, message, cleanLog, trxId)
           )
 
-          // Auto-Refund untuk transaksi gagal
-          if (localStatus === 'failed') {
+          // Auto-Refund jika transaksi gagal, TAPI pastikan sebelumnya belum gagal (anti double-refund)
+          if (localStatus === 'failed' && trx.status !== 'failed') {
             batchStatements.push(
               c.env.DB.prepare(`
                 UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?
