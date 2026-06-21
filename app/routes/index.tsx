@@ -11,15 +11,19 @@ export default createRoute(async (c) => {
     `SELECT id, name, slug, image_url, cover_url FROM categories WHERE parent_id IS NULL ORDER BY name ASC`
   ).all()
 
-  // LOGIKA VISIBILITAS
-  const showCover = settings.ui_cat_show_cover === '1'
-  const showIcon = settings.ui_cat_show_icon === '1'
-  const deviceVis = settings.ui_cat_device || 'all'
-  const forceFallback = !showCover && !showIcon
+  // LOGIKA VISIBILITAS (SEKARANG SUDAH SINKRON DENGAN PENGATURAN ADMIN)
+  const coverVis = settings.ui_cat_cover_vis || 'all'
+  const iconVis = settings.ui_cat_icon_vis || 'all'
 
-  let wrapperClass = "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4 "
-  if (deviceVis === 'desktop') wrapperClass += "hidden md:grid"
-  if (deviceVis === 'mobile') wrapperClass += "grid md:hidden"
+  const getVisClass = (vis: string, defaultDisplay: string) => {
+    if (vis === 'hidden') return 'hidden '
+    if (vis === 'desktop') return `hidden md:${defaultDisplay} `
+    if (vis === 'mobile') return `${defaultDisplay} md:hidden `
+    return `${defaultDisplay} `
+  }
+
+  const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+  const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
   return c.render(
     <div class="max-w-7xl mx-auto space-y-12">
@@ -40,28 +44,31 @@ export default createRoute(async (c) => {
       <div class="px-2">
         <h3 class="text-xl font-bold text-slate-800 mb-6">Pilih Layanan</h3>
         
-        <div class={wrapperClass}>
+        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
           {categories.map((cat: any) => (
             <a 
-              href={`/kategori/${cat.slug}`} 
+              href={`/kategori/${cat.id}`} /* 🔥 PERBAIKAN MUTLAK: SEKARANG MENGGUNAKAN ID! */
               class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
             >
-              {showCover ? (
+              {coverVis !== 'hidden' && (
                 <img 
                   src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} 
                   alt={cat.name} 
-                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
+                  class={coverClass}
                 />
-              ) : (
+              )}
+
+              {/* Fallback gradient jika cover disembunyikan */}
+              {coverVis === 'hidden' && (
                 <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
               )}
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
 
-              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start">
+              <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
                 
-                {(showIcon || forceFallback) && (
-                   <div class="w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 flex items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors">
+                {iconVis !== 'hidden' && (
+                   <div class={iconClass}>
                      <img 
                        src={cat.image_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781793434/enccb9r0usvm70mydthm.png'} 
                        alt={cat.name} 
@@ -78,6 +85,7 @@ export default createRoute(async (c) => {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    { title: 'Agen Pulsa & PPOB Termurah' }
   )
 })
