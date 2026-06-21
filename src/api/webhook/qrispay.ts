@@ -46,12 +46,24 @@ app.post('/', async (c) => {
       `).bind(orderId).first()
       
       if (deposit) {
-        await c.env.DB.batch([
-          // Ubah status tiket jadi success
-          c.env.DB.prepare(`UPDATE deposits SET status = 'success' WHERE id = ?`).bind(orderId),
-          // Tambahkan saldo ke kantong user
-          c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(deposit.amount, deposit.user_id)
-        ])
+        // 🔥 PERBAIKAN FATAL: Cari ID dompet (wallet_id) untuk dicatat di Buku Besar
+        const wallet = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(deposit.user_id).first();
+        
+        if (wallet) {
+            await c.env.DB.batch([
+              // 1. Ubah status tiket deposit jadi success
+              c.env.DB.prepare(`UPDATE deposits SET status = 'success' WHERE id = ?`).bind(orderId),
+              
+              // 2. Tambahkan saldo ke kantong user
+              c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(deposit.amount, deposit.user_id),
+              
+              // 3. 🔥 CATAT PEMASUKAN DI BUKU BESAR (LEDGER TRANSAKSI) 🔥
+              c.env.DB.prepare(`
+                INSERT INTO wallet_transactions (wallet_id, amount, type, status, description) 
+                VALUES (?, ?, 'credit', 'completed', ?)
+              `).bind(wallet.id, deposit.amount, `Deposit Saldo (${orderId})`)
+            ])
+        }
       }
     }
 
