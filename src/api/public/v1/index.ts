@@ -284,4 +284,117 @@ app.get('/produk', async (c) => {
   }
 })
 
+// ====================================================================
+// ENDPOINT: PUBLIC CHECKOUT (GUEST ORDER)
+// ====================================================================
+app.post('/checkout', async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const productId = Number(body.product_id);
+    const customerNumber = body.customer_number as string;
+    const guestEmail = (body.guest_email as string) || null;
+    const inputAmount = Number(body.amount) || 0; 
+    
+    if (!productId || !customerNumber) return c.json({ success: false, message: 'Data tidak lengkap' }, 400);
+
+    const product = await c.env.DB.prepare(`SELECT price, is_open_amount FROM products WHERE id = ? AND status = 'active'`).bind(productId).first();
+    if (!product) return c.json({ success: false, message: 'Produk tidak tersedia' }, 404);
+
+    let totalPrice = product.price as number;
+    if (product.is_open_amount === 1) {
+      if (inputAmount < 1000) return c.json({ success: false, message: 'Nominal minimal Rp 1.000' }, 400);
+      totalPrice = inputAmount + (product.price as number);
+    }
+
+    const gateway = await c.env.DB.prepare(`SELECT api_endpoint, api_key FROM payment_gateways WHERE status = 'active' LIMIT 1`).first();
+    if (!gateway) return c.json({ success: false, message: 'Payment Gateway belum siap' }, 500);
+
+    const orderId = `TRX-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+    const idempotencyKey = crypto.randomUUID();
+
+    // Simpan pesanan sebagai GUEST (user_id = 0), status = waiting_payment
+    // Catatan: inputAmount disimpan di bill_amount agar Webhook tahu nominal yang dipesan
+    await c.env.DB.prepare(`
+      INSERT INTO transactions (id, user_id, product_id, customer_number, guest_email, order_type, bill_amount, total_price, status, idempotency_key)
+      VALUES (?, 0, ?, ?, ?, 'prepaid', ?, ?, 'waiting_payment', ?)
+    `).bind(orderId, productId, customerNumber, guestEmail, inputAmount, totalPrice, idempotencyKey).run();
+
+    // Tembak QRISPAY
+    const hostUrl = new URL(c.req.url).origin;
+    let targetUrl = (gateway.api_endpoint as string).endsWith('/trx') ? gateway.api_endpoint : gateway.api_endpoint + '/trx';
+    
+    const qrisRes = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${gateway.api_key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: orderId, amount: totalPrice,
+        webhook_url: `${hostUrl}/api/webhook/qrispay`,
+      })
+    });
+
+    const qrisData = await qrisRes.json();
+    if (qrisData.raw_qris) {
+      return c.json({ success: true, order_id: orderId, raw_qris: qrisData.raw_qris, total_price: totalPrice });
+    } else {
+      return c.json({ success: false, message: 'Gagal men-generate QRIS' }, 500);
+    }
+  } catch (error: any) {
+    return c.json({ success: false, message: error.message }, 500);
+  }
+});
+
+// ====================================================================
+// ENDPOINT: TRACK ORDER (AMAN DENGAN NO HP)
+// ====================================================================
+app.post('/track', async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const orderId = body.order_id as string;
+    const phone = body.phone as string; // Kunci Keamanan
+
+    const trx = await c.env.DB.prepare(`
+      SELECT t.status, t.customer_number, t.provider_response, t.total_price, t.created_at, p.name as product_name, c.slug as category_slug
+      FROM transactions t
+      JOIN products p ON t.product_id = p.id
+      JOIN categories c ON p.category_id = c.id
+      WHERE t.id = ? AND t.user_id = 0
+    `).bind(orderId).first();
+
+    if (!trx) return c.json({ success: false, message: 'Pesanan tidak ditemukan.' }, 404);
+
+    // KUNCI KEAMANAN: Jika kategori mengandung kata 'voucher', wajib cocokkan No HP!
+    let isVoucher = String(trx.category_slug).includes('voucher');
+    let secureSn = null;
+
+    if (trx.status === 'success') {
+      const responseObj = JSON.parse(trx.provider_response as string || '{}');
+      const rawSn = responseObj.sn || responseObj.raw_text || 'SN belum didapatkan';
+
+      if (isVoucher) {
+        if (!phone || phone !== trx.customer_number) {
+           return c.json({ success: false, require_phone: true, message: 'Silakan masukkan Nomor HP yang benar untuk melihat Kode Voucher.' }, 401);
+        }
+        secureSn = rawSn; // HP Cocok, berikan SN
+      } else {
+        secureSn = rawSn; // Bukan voucher, bebas tampilkan
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        order_id: orderId,
+        product_name: trx.product_name,
+        customer_number: trx.customer_number,
+        status: trx.status,
+        total_price: trx.total_price,
+        sn: secureSn,
+        created_at: trx.created_at
+      }
+    });
+  } catch (error: any) {
+    return c.json({ success: false, message: error.message }, 500);
+  }
+});
+
 export default app
