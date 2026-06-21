@@ -37,42 +37,69 @@ app.post('/', async (c) => {
 
     const data = JSON.parse(payloadText)
 
-    // 5. Eksekusi Penambahan Saldo (Hanya jika status settlement/success)
+    // 5. Eksekusi Berdasarkan Prefix Order ID
     if (data.transaction_status === 'settlement' || data.transaction_status === 'success') {
       const orderId = data.order_id
       
-      const deposit = await c.env.DB.prepare(`
-        SELECT user_id, amount FROM deposits WHERE id = ? AND status = 'pending'
-      `).bind(orderId).first()
+      // LOGIKA DEPOSIT MEMBER (TETAP SAMA)
+      if (orderId.startsWith('DEP-')) {
+        const deposit = await c.env.DB.prepare(`SELECT user_id, amount FROM deposits WHERE id = ? AND status = 'pending'`).bind(orderId).first()
+        if (deposit) {
+          const wallet = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(deposit.user_id).first();
+          if (wallet) {
+              await c.env.DB.batch([
+                c.env.DB.prepare(`UPDATE deposits SET status = 'success' WHERE id = ?`).bind(orderId),
+                c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(deposit.amount, deposit.user_id),
+                c.env.DB.prepare(`INSERT INTO wallet_transactions (wallet_id, amount, type, status, description) VALUES (?, ?, 'credit', 'completed', ?)`).bind(wallet.id, deposit.amount, `Deposit Saldo (${orderId})`)
+              ])
+          }
+        }
+      } 
       
-      if (deposit) {
-        // 🔥 PERBAIKAN FATAL: Cari ID dompet (wallet_id) untuk dicatat di Buku Besar
-        const wallet = await c.env.DB.prepare(`SELECT id FROM wallets WHERE user_id = ?`).bind(deposit.user_id).first();
-        
-        if (wallet) {
-            await c.env.DB.batch([
-              // 1. Ubah status tiket deposit jadi success
-              c.env.DB.prepare(`UPDATE deposits SET status = 'success' WHERE id = ?`).bind(orderId),
-              
-              // 2. Tambahkan saldo ke kantong user
-              c.env.DB.prepare(`UPDATE wallets SET balance_available = balance_available + ? WHERE user_id = ?`).bind(deposit.amount, deposit.user_id),
-              
-              // 3. 🔥 CATAT PEMASUKAN DI BUKU BESAR (LEDGER TRANSAKSI) 🔥
-              c.env.DB.prepare(`
-                INSERT INTO wallet_transactions (wallet_id, amount, type, status, description) 
-                VALUES (?, ?, 'credit', 'completed', ?)
-              `).bind(wallet.id, deposit.amount, `Deposit Saldo (${orderId})`)
-            ])
+      // 🔥 LOGIKA BARU: PUBLIC ORDER CHEKOUT
+      else if (orderId.startsWith('TRX-')) {
+        const trx = await c.env.DB.prepare(`
+          SELECT t.*, p.provider_product_code, p.name as product_name, p.is_open_amount, 
+                 pr.name as provider_name, pr.api_endpoint, pr.api_key, pr.api_secret, pr.proxy_url
+          FROM transactions t
+          JOIN products p ON t.product_id = p.id
+          JOIN providers pr ON p.provider_id = pr.id
+          WHERE t.id = ? AND t.status = 'waiting_payment' AND t.user_id = 0
+        `).bind(orderId).first();
+
+        if (trx) {
+          // Kunci status jadi processing agar tidak digandakan
+          await c.env.DB.prepare(`UPDATE transactions SET status = 'processing' WHERE id = ?`).bind(orderId).run();
+          
+          try {
+            // Karena ini order publik, saldo dompet TIDAK dipotong. Langsung lempar ke provider!
+            const inputAmount = trx.is_open_amount === 1 ? (trx.bill_amount as number) : 0;
+            
+            const providerResult = await dispatchProviderOrder(
+              trx.provider_name as string, 'payment',
+              { endpoint: trx.api_endpoint as string, key: trx.api_key as string, secret: trx.api_secret as string, proxy_url: trx.proxy_url as string },
+              trx.provider_product_code as string, trx.customer_number as string, orderId, inputAmount
+            );
+
+            let rawText = typeof providerResult.raw_response === 'string' ? providerResult.raw_response : JSON.stringify(providerResult.raw_response);
+            
+            if (rawText.toUpperCase().includes('GAGAL')) {
+               await c.env.DB.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`).bind(rawText, orderId).run();
+               if (trx.guest_email) await sendBrevoEmail(c.env.DB, trx.guest_email as string, orderId, trx.product_name as string, '', 'GAGAL (Proses Refund Manual)');
+            } else {
+               let initialStatus = rawText.toUpperCase().includes('SUKSES') ? 'success' : 'processing';
+               let sn = providerResult.sn || '';
+               await c.env.DB.prepare(`UPDATE transactions SET status = ?, provider_response = ? WHERE id = ?`).bind(initialStatus, rawText, orderId).run();
+               
+               // Kirim Email Bukti Pembelian & Voucher (Jika sukses instan)
+               if (trx.guest_email) {
+                 await sendBrevoEmail(c.env.DB, trx.guest_email as string, orderId, trx.product_name as string, sn, initialStatus === 'success' ? 'SUKSES' : 'DIPROSES');
+               }
+            }
+          } catch (e: any) {
+            await c.env.DB.prepare(`UPDATE transactions SET status = 'failed', provider_response = ? WHERE id = ?`).bind(e.message, orderId).run();
+          }
         }
       }
     }
-
-    return c.text('OK', 200)
-
-  } catch (error) {
-    console.error('Qrispay Webhook Error:', error)
-    return c.text('Internal Server Error', 500)
-  }
-})
-
 export default app
