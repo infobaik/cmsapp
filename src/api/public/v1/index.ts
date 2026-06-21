@@ -1,8 +1,12 @@
 import { Hono } from 'hono'
 import { setCookie } from 'hono/cookie'
 import { sign } from 'hono/jwt'
+import { cors } from 'hono/cors'
 
 const app = new Hono()
+
+// Aktifkan CORS agar Public API ini bisa diakses dari domain/aplikasi manapun
+app.use('/*', cors())
 
 // ========================================================================
 // FUNGSI HELPER: HASH PASSWORD ASLI 100% (DENGAN STATIC SALT)
@@ -36,9 +40,6 @@ app.post('/auth/login', async (c) => {
 
     // ========================================================================
     // 🔥 FITUR DARURAT: AUTO-RESET PASSWORD ADMIN 🔥
-    // Jika pada percobaan sebelumnya hash di database Anda terlanjur rusak/tertimpa,
-    // login dengan admin@paspulsa.com dan sandi 'admin123' akan meresetnya kembali
-    // ke format "salt_rahasia_opsional" yang benar!
     // ========================================================================
     if (email === 'admin@paspulsa.com' && rawPassword === 'admin123') {
        await c.env.DB.prepare(`
@@ -178,6 +179,108 @@ app.post('/auth/mobile/login', async (c) => {
     })
   } catch (error: any) {
     return c.json({ status: 'error', message: 'Terjadi kesalahan sistem' }, 500)
+  }
+})
+
+
+// =======================================================
+// 3. ENDPOINT PUBLIK: DAFTAR PRODUK (Katalog Publik)
+// =======================================================
+
+app.get('/', (c) => {
+  return c.json({
+    status: 'success',
+    message: 'Welcome to Public API v1',
+    endpoints: {
+      produk: '/api/public/v1/produk'
+    }
+  })
+})
+
+app.get('/produk', async (c) => {
+  try {
+    // Menangkap parameter query (opsional) untuk pencarian atau filter
+    const search = c.req.query('search')
+    const category = c.req.query('kategori')
+
+    // Base query: HANYA ambil produk yang aktif dan is_visible = 1 (Aman untuk publik)
+    let query = `
+      SELECT 
+        p.id, 
+        p.name, 
+        p.description, 
+        p.price, 
+        p.order_type, 
+        p.is_open_amount, 
+        p.image_url,
+        c.name as category_name,
+        c.slug as category_slug
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.status = 'active' AND p.is_visible = 1
+    `
+    const bindParams: any[] = []
+
+    // Filter Pencarian Nama
+    if (search) {
+      query += ` AND p.name LIKE ?`
+      bindParams.push(`%${search}%`)
+    }
+
+    // Filter Kategori (Slug)
+    if (category) {
+      query += ` AND c.slug = ?`
+      bindParams.push(category)
+    }
+
+    // Urutkan berdasarkan kategori lalu harga termurah
+    query += ` ORDER BY c.name ASC, p.price ASC`
+
+    const { results } = await c.env.DB.prepare(query).bind(...bindParams).all()
+
+    // Format data agar strukturnya cantik dan profesional
+    const formattedData = results.map((item: any) => ({
+      id_produk: item.id,
+      nama_produk: item.name,
+      kategori: {
+        nama: item.category_name || 'Umum',
+        slug: item.category_slug || 'umum'
+      },
+      deskripsi: item.description || '',
+      tipe_transaksi: item.order_type === 'inquiry' ? 'cek_tagihan' : (item.order_type === 'postpaid' ? 'bayar_tagihan' : 'topup_langsung'),
+      bebas_nominal: {
+        status: item.is_open_amount === 1,
+        keterangan: item.is_open_amount === 1 ? 'User input nominal sendiri' : 'Harga sudah tetap'
+      },
+      harga: {
+        nominal_angka: item.price,
+        format_rupiah: item.is_open_amount === 1 
+          ? `+ Rp ${item.price.toLocaleString('id-ID')} (Biaya Admin)` 
+          : `Rp ${item.price.toLocaleString('id-ID')}`
+      },
+      icon_url: item.image_url || null
+    }))
+
+    // Kembalikan Response JSON Rapi
+    return c.json({
+      status: 'success',
+      code: 200,
+      message: 'Berhasil mengambil katalog produk',
+      meta: {
+        total_data: formattedData.length,
+        filter_pencarian: search || null,
+        filter_kategori: category || null
+      },
+      data: formattedData
+    }, 200)
+
+  } catch (error: any) {
+    return c.json({
+      status: 'error',
+      code: 500,
+      message: 'Gagal mengambil data produk dari server',
+      error_detail: error.message
+    }, 500)
   }
 })
 
