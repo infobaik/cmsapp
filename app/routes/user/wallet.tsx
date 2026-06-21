@@ -3,27 +3,30 @@ import { getUserWallet } from '../../../src/services/wallet'
 
 export default createRoute(async (c) => {
   const user = c.get('user')!
-  const wallet = await getUserWallet(c.env.DB, user.id) || { balance_available: 0, balance_pending: 0 }
+  const wallet = await getUserWallet(c.env.DB, user.id) || { id: null, balance_available: 0, balance_pending: 0 }
   
-  // Ambil daftar payment gateway aktif untuk opsi deposit
   const { results: gateways } = await c.env.DB.prepare(`SELECT code, name FROM payment_gateways WHERE status = 'active'`).all()
-
-  const successMsg = c.req.query('success')
+  
+  // 🔥 PERBAIKAN: Mengambil 10 Riwayat Saldo Terakhir dari Database
+  let transactions: any = [];
+  if (wallet.id) {
+    const { results } = await c.env.DB.prepare(`
+      SELECT amount, type, description, created_at 
+      FROM wallet_transactions 
+      WHERE wallet_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 10
+    `).bind(wallet.id).all();
+    transactions = results;
+  }
 
   return c.render(
     <div class="max-w-6xl mx-auto space-y-6">
       
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-slate-100">Dompet Digital</h1>
-        <p class="text-sm text-slate-400">Kelola saldo, deposit, dan pencairan dana Anda.</p>
+        <p class="text-sm text-slate-400">Kelola saldo dan riwayat deposit Anda.</p>
       </div>
-
-      {successMsg === 'deposit_created' && (
-        <div class="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
-          <svg width="20" height="20" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          Tiket Deposit berhasil dibuat. Silakan lakukan pembayaran.
-        </div>
-      )}
 
       {/* KARTU SALDO (GRID) */}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -37,20 +40,17 @@ export default createRoute(async (c) => {
         </div>
       </div>
       
-      {/* FORM DEPOSIT & PENARIKAN (SIDE BY SIDE) */}
+      {/* FORM DEPOSIT & RIWAYAT SALDO (SIDE BY SIDE) */}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* KOLOM DEPOSIT */}
         <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl p-6">
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Topup Saldo (Deposit)</h2>
           
-          {/* ============================================== */}
-          {/* FORM ASLI ANDA (DITAMBAH ID UNTUK AJAX JAVASCRIPT) */}
-          {/* ============================================== */}
           <form id="depositForm" method="POST" action="/api/user/v1/wallet/deposit" class="space-y-4">
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nominal Topup (Rp)</label>
-              <input type="number" id="depositAmount" name="amount" min="1000" placeholder="Min. 10000" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" />
+              <input type="number" id="depositAmount" name="amount" min="10000" placeholder="Min. 10000" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" />
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Metode Pembayaran</label>
@@ -65,49 +65,52 @@ export default createRoute(async (c) => {
             </button>
           </form>
 
-          {/* ============================================== */}
-          {/* AREA QRIS (MUNCUL OTOMATIS BERKAT AJAX & JAVASCRIPT) */}
-          {/* DISESUAIKAN DENGAN DARK MODE ANDA */}
-          {/* ============================================== */}
+          {/* AREA QRIS AJAX */}
           <div id="qrisArea" class="hidden mt-4 flex-col items-center justify-center p-6 border-2 border-dashed border-slate-700 rounded-2xl bg-[#121217]">
             <h4 class="font-bold text-slate-200 text-lg mb-1">Scan QRIS untuk Membayar</h4>
-            
             <p class="text-slate-400 text-sm mb-5">
               Sisa Waktu: <span id="countdownTimer" class="font-bold text-red-500 text-lg ml-1">15:00</span>
             </p>
-
             <div class="bg-white p-4 rounded-3xl shadow-sm mb-5 relative">
-               {/* GAMBAR QR CODE */}
-               <img id="qrisImage" src="" alt="QR Code Pembayaran" class="w-56 h-56 md:w-64 md:h-64 object-contain" />
+               <img id="qrisImage" src="" alt="QR Code" class="w-56 h-56 md:w-64 md:h-64 object-contain" />
             </div>
-
             <div class="text-center space-y-1 mb-6">
                <p class="text-sm font-medium text-slate-400">ID Tiket: <span id="lblDepositId" class="font-bold text-slate-200 font-mono"></span></p>
                <p class="text-sm font-medium text-slate-400">Total Transfer: <span id="lblAmount" class="font-bold text-emerald-400 text-xl block mt-1"></span></p>
             </div>
-
             <div id="paymentStatusBox" class="w-full max-w-sm px-4 py-3 bg-amber-500/10 text-amber-500 text-center rounded-xl text-sm font-semibold animate-pulse border border-amber-500/20">
               <span class="inline-block animate-spin mr-2">⏳</span> Menunggu Pembayaran Anda...
             </div>
           </div>
         </div>
 
-        {/* KOLOM PENARIKAN (FITUR ASLI ANDA, SAYA KEMBALIKAN UTUH!) */}
+        {/* 🔥 KOLOM BARU: BUKU BESAR / RIWAYAT TRANSAKSI SALDO */}
         <div class="bg-[#18181b] border border-slate-800/60 rounded-2xl p-6">
-          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Tarik Dana</h2>
-          <p class="text-xs text-slate-400 mb-6 leading-relaxed">
-            Pencairan dana akan diproses ke rekening yang terdaftar. Saldo minimal penarikan adalah Rp 50.000.
-          </p>
-          <form method="POST" action="/api/user/v1/wallet/withdraw">
-            <button type="submit" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium py-3 px-4 rounded-xl transition-colors disabled:opacity-50" disabled={wallet.balance_available < 50000}>
-              Ajukan Penarikan (Rp 50.000)
-            </button>
-          </form>
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wide mb-4 border-b border-slate-800/60 pb-3">Riwayat Transaksi Saldo</h2>
+          <div class="space-y-4 max-h-[310px] overflow-y-auto pr-2">
+            {transactions.length > 0 ? transactions.map((tx: any) => (
+              <div class="flex items-center justify-between border-b border-slate-800/50 pb-3 last:border-0 last:pb-0">
+                <div class="flex-1 pr-4">
+                  <p class="text-sm font-semibold text-slate-200 leading-tight mb-1">{tx.description || '-'}</p>
+                  <p class="text-[10px] text-slate-500 font-mono">
+                    {new Date(tx.created_at).toLocaleString('id-ID')}
+                  </p>
+                </div>
+                <div class={`text-sm font-bold shrink-0 ${tx.type === 'credit' ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {tx.type === 'credit' ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                </div>
+              </div>
+            )) : (
+              <div class="text-center py-8">
+                <span class="text-3xl mb-2 block opacity-50">🧾</span>
+                <p class="text-xs text-slate-500">Belum ada riwayat transaksi saldo.</p>
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
 
-      {/* SCRIPT AJAX UNTUK MENGELOLA QRIS TANPA PINDAH HALAMAN */}
       <script dangerouslySetInnerHTML={{ __html: `
         document.getElementById('depositForm').addEventListener('submit', async (e) => {
           e.preventDefault();
@@ -183,9 +186,7 @@ export default createRoute(async (c) => {
                 statusBox.className = "w-full max-w-sm px-4 py-3 bg-emerald-500/10 text-emerald-400 text-center rounded-xl text-sm font-bold border border-emerald-500/20 shadow-lg shadow-emerald-500/10";
                 statusBox.innerHTML = "✅ PEMBAYARAN BERHASIL DITERIMA!";
 
-                setTimeout(() => {
-                  window.location.reload();
-                }, 3000);
+                setTimeout(() => { window.location.reload(); }, 3000);
               } 
               else if (data.status === 'failed' || data.status === 'cancelled') {
                 clearInterval(pollInterval);
