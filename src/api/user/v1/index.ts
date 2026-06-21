@@ -44,19 +44,82 @@ app.post('/wallet/withdraw', async (c) => {
   }
 })
 
+// ====================================================================
+// 🔥 DEPOSIT AJAX: MENGEMBALIKAN RAW QRIS & POLLING STATUS
+// ====================================================================
 app.post('/wallet/deposit', async (c) => {
   try {
     const userId = c.get('ui_user_id')
     const body = await c.req.parseBody()
     const amount = Number(body.amount)
 
-    if (amount < 1000) return c.redirect('/user/wallet?error=minimal_10000')
+    if (amount < 10000) return c.json({ success: false, message: 'Minimal deposit Rp 10.000' }, 400)
+    
     const depositId = `DEP-${crypto.randomUUID().split('-')[0].toUpperCase()}`
 
+    // 1. Simpan ke database dengan status pending
     await c.env.DB.prepare(`INSERT INTO deposits (id, user_id, amount, status) VALUES (?, ?, ?, 'pending')`).bind(depositId, userId, amount).run()
-    return c.redirect('/user/wallet?success=deposit_created')
-  } catch (error) {
-    return c.redirect('/user/wallet?error=system_error')
+
+    // 2. Ambil Endpoint & API Key dinamis dari database
+    const gateway = await c.env.DB.prepare(`SELECT api_endpoint, api_key FROM payment_gateways WHERE status = 'active' LIMIT 1`).first()
+    
+    if (!gateway || !gateway.api_endpoint || !gateway.api_key) {
+       return c.json({ success: false, message: 'Payment Gateway belum dikonfigurasi di Admin' }, 500)
+    }
+
+    const hostUrl = new URL(c.req.url).origin 
+    
+    const reqBody = {
+        order_id: depositId,
+        amount: amount,
+        webhook_url: `${hostUrl}/api/webhook/qrispay`,
+        redirect_url: `` // Dikosongkan karena tidak butuh redirect
+    }
+
+    let targetUrl = gateway.api_endpoint as string;
+    if (!targetUrl.endsWith('/trx')) targetUrl = targetUrl.replace(/\/$/, '') + '/trx';
+
+    const qrisRes = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${gateway.api_key}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(reqBody)
+    })
+
+    if (!qrisRes.ok) return c.json({ success: false, message: 'Koneksi ke API Gateway Gagal' }, 500)
+
+    const qrisData = await qrisRes.json()
+    
+    // MENGIRIM RAW QRIS KE FRONTEND (TANPA REDIRECT)
+    if (qrisData.raw_qris) {
+        return c.json({
+            success: true,
+            deposit_id: depositId,
+            raw_qris: qrisData.raw_qris,
+            amount: amount
+        })
+    } else {
+        return c.json({ success: false, message: 'API Qrispay tidak mengembalikan kode RAW QRIS' }, 500)
+    }
+  } catch (error: any) {
+    return c.json({ success: false, message: error.message }, 500)
+  }
+})
+
+// ROUTE POLLING STATUS PEMBAYARAN
+app.get('/wallet/deposit/:id/status', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const userId = c.get('ui_user_id')
+    
+    const deposit = await c.env.DB.prepare(`SELECT status FROM deposits WHERE id = ? AND user_id = ?`).bind(id, userId).first()
+    if (!deposit) return c.json({ status: 'not_found' }, 404)
+
+    return c.json({ status: deposit.status })
+  } catch (error: any) {
+    return c.json({ status: 'error', message: error.message }, 500)
   }
 })
 
@@ -122,66 +185,5 @@ const payOrderHandler = async (c: any) => {
 // 🎯 DAFTARKAN DUA URL SEKALIGUS (Anti 404!)
 app.post('/order/pay', payOrderHandler)
 app.post('/transaction/pay', payOrderHandler)
-
-app.post('/wallet/deposit', async (c) => {
-  try {
-    const userId = c.get('ui_user_id')
-    const body = await c.req.parseBody()
-    const amount = Number(body.amount)
-
-    if (amount < 1000) return c.redirect('/user/wallet?error=minimal_10000')
-    
-    const depositId = `DEP-${crypto.randomUUID().split('-')[0].toUpperCase()}`
-
-    // 1. Simpan ke database dengan status pending
-    await c.env.DB.prepare(`INSERT INTO deposits (id, user_id, amount, status) VALUES (?, ?, ?, 'pending')`).bind(depositId, userId, amount).run()
-
-    // 2. Ambil Endpoint & API Key dari database (Dinamis dari Admin Area)
-    const gateway = await c.env.DB.prepare(`SELECT api_endpoint, api_key FROM payment_gateways WHERE status = 'active' LIMIT 1`).first()
-    
-    // 3. Tembak ke API Payment Gateway secara dinamis
-    if (gateway && gateway.api_endpoint && gateway.api_key) {
-       const hostUrl = new URL(c.req.url).origin 
-       
-       const reqBody = {
-           order_id: depositId,
-           amount: amount,
-           webhook_url: `${hostUrl}/api/webhook/qrispay`, // Targeted Webhook
-           redirect_url: `${hostUrl}/user/history?success=Deposit+dibuat,+silakan+selesaikan+pembayaran`
-       }
-
-       // Format URL agar selalu akurat (jika Admin lupa menaruh '/trx' di ujung URL)
-       let targetUrl = gateway.api_endpoint as string;
-       if (!targetUrl.endsWith('/trx')) {
-           targetUrl = targetUrl.replace(/\/$/, '') + '/trx';
-       }
-
-       // Fetch menggunakan URL dari database
-       const qrisRes = await fetch(targetUrl, {
-           method: 'POST',
-           headers: {
-               'Authorization': `Bearer ${gateway.api_key}`,
-               'Content-Type': 'application/json'
-           },
-           body: JSON.stringify(reqBody)
-       })
-
-       if (qrisRes.ok) {
-           const qrisData = await qrisRes.json()
-           // Dukungan untuk berbagai format kembalian URL checkout
-           const paymentUrl = qrisData.data?.checkout_url || qrisData.data?.payment_url || qrisData.checkout_url || qrisData.payment_url || qrisData.url || qrisData.redirect_url
-           
-           if (paymentUrl) {
-               return c.redirect(paymentUrl) 
-           }
-       }
-    }
-
-    // Fallback jika API sedang gangguan atau Gateway belum disetting di Admin
-    return c.redirect('/user/wallet?success=deposit_created_manual')
-  } catch (error) {
-    return c.redirect('/user/wallet?error=system_error')
-  }
-})
 
 export default app
