@@ -1,40 +1,41 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // 🔥 PERBAIKAN FATAL: MENGGUNAKAN ID, BUKAN SLUG!
   const id = c.req.param('id')
   
-  // 1. Ambil Data Kategori Saat Ini berdasarkan ID
-  const category = await c.env.DB.prepare(`SELECT id, name, cover_url FROM categories WHERE id = ?`).bind(id).first()
+  // 1. CEK KATEGORI SAAT INI (Menggunakan SELECT * persis seperti Member Area)
+  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
   if (!category) return c.notFound()
 
-  // 2. Ambil Pengaturan UI Global
+  // 2. AMBIL PENGATURAN UI GLOBAL
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
   sysSettings.forEach((row: any) => { settings[row.key] = row.value })
 
-  // 3. CEK APAKAH ADA SUB-KATEGORI?
+  // 3. CEK APAKAH ADA SUB-KATEGORI? (🔥 PERBAIKAN FATAL: Gunakan bind(id) string murni!)
   const { results: subCategories } = await c.env.DB.prepare(`
-    SELECT id, name, image_url, cover_url 
+    SELECT id, name, slug, image_url, cover_url 
     FROM categories 
     WHERE parent_id = ? 
     ORDER BY name ASC
-  `).bind(category.id).all()
+  `).bind(id).all()
 
-  // 4. JIKA TIDAK ADA SUB-KATEGORI, BARU AMBIL PRODUKNYA
+  // 4. JIKA TIDAK ADA SUB-KATEGORI, BARU AMBIL PRODUKNYA (Kueri disamakan dengan Member Area)
   let products: any[] = []
   if (subCategories.length === 0) {
     const { results } = await c.env.DB.prepare(`
-      SELECT id, name, price, is_open_amount, image_url 
-      FROM products 
-      WHERE category_id = ? AND status = 'active' AND is_visible = 1
-      ORDER BY price ASC
-    `).bind(category.id).all()
+      SELECT p.*, pr.name as provider_name 
+      FROM products p
+      JOIN providers pr ON p.provider_id = pr.id
+      WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
+      ORDER BY p.price ASC
+    `).bind(id).all()
     products = results
   }
 
-  // Pengecekan Kategori Voucher untuk Peringatan Keamanan (Cek dari Nama)
-  const isVoucher = category.name.toLowerCase().includes('voucher')
+  // Pengecekan Kategori Voucher untuk Peringatan Keamanan
+  const categoryName = category.name as string
+  const isVoucher = categoryName.toLowerCase().includes('voucher')
 
   // Logika CSS UI Kategori
   const coverVis = settings.ui_cat_cover_vis || 'all'
@@ -57,10 +58,10 @@ export default createRoute(async (c) => {
       {/* HEADER KATEGORI (BANNER) */}
       {/* ======================================================== */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
-         <img src={category.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+         <img src={(category.cover_url as string) || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={category.name as string} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name as string}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base">
              {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
@@ -75,11 +76,12 @@ export default createRoute(async (c) => {
           <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
             {subCategories.map((cat: any) => (
               <a 
-                href={`/kategori/${cat.id}`} /* 🔥 PERBAIKAN: LINK MENGGUNAKAN ID */
+                href={`/kategori/${cat.id}`} 
                 class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
-                {coverVis !== 'hidden' && cat.cover_url && (
-                  <img src={cat.cover_url} alt={cat.name} class={coverClass} />
+                {/* 🔥 PERBAIKAN VISUAL: Ditambah fallback cover agar card tidak hitam blank jika cover_url kosong! */}
+                {coverVis !== 'hidden' && (
+                  <img src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={cat.name} class={coverClass} />
                 )}
                 <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
