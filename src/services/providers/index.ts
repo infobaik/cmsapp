@@ -89,13 +89,15 @@ export const safeProviderFetch = async (
     }
 }
 
+// 🔥 PERBAIKAN: Menambahkan parameter amount (default 0) di akhir
 export const dispatchProviderOrder = async (
     providerName: string,
     action: string,
     creds: ProviderCredentials,
     productCode: string,
     customerNumber: string,
-    refId: string
+    refId: string,
+    amount: number = 0 
 ) => {
     const provider = providerName.toLowerCase()
     
@@ -103,7 +105,8 @@ export const dispatchProviderOrder = async (
         return await executeDigiflazz(action, creds, productCode, customerNumber, refId);
     } 
     else if (provider.includes('okeconnect') || provider.includes('orderkuota')) {
-        return await executeOkeConnect(action, creds, productCode, customerNumber, refId);
+        // 🔥 PERBAIKAN: Meneruskan amount ke fungsi OkeConnect
+        return await executeOkeConnect(action, creds, productCode, customerNumber, refId, amount);
     }
     
     throw new Error(`Provider ${providerName} belum memiliki logic eksekutor.`);
