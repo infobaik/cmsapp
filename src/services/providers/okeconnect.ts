@@ -5,7 +5,8 @@ export const executeOkeConnect = async (
   creds: ProviderCredentials, 
   productCode: string, 
   customerNumber: string, 
-  refId: string
+  refId: string,
+  amount: number = 0 // 🔥 PERBAIKAN: Menangkap parameter amount
 ) => {
   
   const memberId = creds.key;
@@ -19,7 +20,10 @@ export const executeOkeConnect = async (
     password = parts[1];
   }
 
-  const qty = '1';
+  // 🔥 PERBAIKAN FATAL: Menjadikan QTY Dinamis!
+  // Jika amount lebih dari 0 (Bebas Nominal), gunakan amount sebagai qty.
+  // Jika 0 (Produk Biasa), gunakan default '1'.
+  const qty = amount > 0 ? amount.toString() : '1';
 
   let baseUrl = creds.endpoint.replace(/\/$/, '');
   if (!baseUrl.endsWith('trx')) {
@@ -29,7 +33,7 @@ export const executeOkeConnect = async (
   const queryParams = new URLSearchParams({
     product: productCode,
     dest: customerNumber,
-    qty: qty,
+    qty: qty, // 👈 QTY SEKARANG SUDAH DINAMIS MENGIKUTI NOMINAL!
     refID: refId,
     memberID: memberId,
     pin: pin,
