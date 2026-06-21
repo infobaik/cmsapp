@@ -63,9 +63,18 @@ export default createRoute(async (c) => {
           
           <form id="depositForm" method="POST" action="/api/user/v1/wallet/deposit" class="space-y-4">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nominal Topup (Rp)</label>
-              <input type="number" id="depositAmount" name="amount" min="10000" placeholder="Min. 10000" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" />
-            </div>
+            <label class="block text-xs font-semibold text-slate-500 mb-1.5">Nominal Topup (Rp)</label>
+            <input 
+              type="number" 
+              id="depositAmount" 
+              name="amount" 
+              min="1000" 
+              max="499999" 
+              placeholder="10000 - 499999" 
+              required 
+              class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none" 
+            />
+          </div>
             <div>
               <label class="block text-xs font-semibold text-slate-500 mb-1.5">Metode Pembayaran</label>
               <select id="depositGateway" name="gateway_code" required class="w-full bg-[#121217] border border-slate-800/60 focus:border-emerald-500/50 rounded-xl p-3 text-slate-200 outline-none">
