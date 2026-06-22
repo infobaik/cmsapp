@@ -310,6 +310,7 @@ export default createRoute(async (c) => {
             async loadWidgets() {
                 const domc = window.editor.DomComponents; const bm = window.editor.BlockManager;
                 try {
+                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch('/api/admin/v1/widgets');
                     if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
                     const widgets = await res.json();
@@ -356,6 +357,7 @@ export default createRoute(async (c) => {
             async loadPageData(slug) {
                 this.loading = true;
                 try {
+                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch(\`/api/admin/v1/builder/pages/\${slug}\`);
                     if (!res.ok) throw new Error("Gagal mengambil data halaman");
                     const data = await res.json();
@@ -393,6 +395,8 @@ export default createRoute(async (c) => {
                     html = tempDiv.innerHTML;
 
                     const payload = { id: this.page.id, slug: this.page.slug, title: this.page.title, html: html, css: css, product_config: this.page.config, product_type: this.page.product_type };
+                    
+                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch('/api/admin/v1/builder/pages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
                     if(res.ok) { this.notify('Sukses', 'Halaman berhasil disimpan!'); } else { const err = await res.json(); throw new Error(err.message || 'Save failed'); }
                 } catch (e) { this.notify('Gagal', e.message, 'error'); }
@@ -402,7 +406,6 @@ export default createRoute(async (c) => {
             initGrapes() {
                 window.editor = grapesjs.init({
                     container: '#gjs', height: '100%', width: 'auto', storageManager: false, showOffsets: 1, noticeOnUnload: 0, panels: { defaults: [] }, 
-                    // INI KUNCINYA: Mengizinkan skrip yang tertanam di halaman (seperti pada page test Anda) untuk tereksekusi di dalam kanvas
                     allowScripts: 1, 
                     assetManager: { 
                         uploadText: 'Drop gambar di sini', autoAdd: 1,
@@ -413,6 +416,7 @@ export default createRoute(async (c) => {
                                 reader.onloadend = async () => {
                                     const fd = new FormData(); fd.append('file', reader.result); fd.append('filename', file.name);
                                     try {
+                                        // PERBAIKAN: Mengarah ke Hono Backend
                                         const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: fd }); const json = await res.json();
                                         let finalData = null; if (json.data && Array.isArray(json.data)) finalData = json.data[0]; else if (json.secure_url) finalData = { src: json.secure_url, width: json.width, height: json.height };
                                         if(finalData) window.editor.AssetManager.add(finalData); else alert('Gagal parse response Cloudinary');
@@ -490,7 +494,6 @@ export default createRoute(async (c) => {
 
                         const currentValue = trait.getValue();
 
-                        // 1. KOTAK PREVIEW GAMBAR
                         const previewWrapper = document.createElement('div');
                         previewWrapper.style.width = '100%';
                         previewWrapper.style.height = '120px';
@@ -507,27 +510,23 @@ export default createRoute(async (c) => {
                         previewImg.src = currentValue || '';
                         previewWrapper.appendChild(previewImg);
 
-                        // 2. INPUT FILE (Sembunyi)
                         const input = document.createElement('input'); 
                         input.type = 'file'; 
                         input.accept = 'image/*'; 
                         input.style.display = 'none';
                         
-                        // 3. TOMBOL UPLOAD / GANTI
                         const btn = document.createElement('button'); 
                         btn.className = 'trait-custom-btn'; 
                         btn.innerHTML = (currentValue && currentValue.trim() !== '') 
                             ? '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR' 
                             : '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
 
-                        // 4. TOMBOL HAPUS (MERAH)
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'trait-custom-btn';
                         removeBtn.style.backgroundColor = '#ef4444';
                         removeBtn.innerHTML = '<i class="ph ph-trash"></i> KOSONGKAN SLOT';
                         removeBtn.style.display = (currentValue && currentValue.trim() !== '') ? 'flex' : 'none';
 
-                        // AKSI KETIKA TOMBOL UPLOAD DIKLIK
                         btn.onclick = () => input.click();
                         input.onchange = () => {
                             const file = input.files[0]; if(!file) return;
@@ -542,15 +541,14 @@ export default createRoute(async (c) => {
                                 formData.append('filename', file.name);
                                 
                                 try {
+                                    // PERBAIKAN: Mengarah ke Hono Backend
                                     const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: formData }); 
                                     const json = await res.json();
                                     const url = json.data ? json.data[0].src : (json.url || json.secure_url);
                                     if(url) { 
-                                        // Masukkan URL ke GrapesJS
                                         trait.setValue(url); 
                                         trait.target.addAttributes({ [trait.get('name')]: url }); 
                                         
-                                        // Update Tampilan (Munculkan Preview & Tombol Hapus)
                                         previewImg.src = url;
                                         previewWrapper.style.display = 'block';
                                         btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR';
@@ -572,14 +570,11 @@ export default createRoute(async (c) => {
                             };
                         };
 
-                        // AKSI KETIKA TOMBOL HAPUS DIKLIK
                         removeBtn.onclick = () => {
-                            // Kosongkan value dari memori GrapesJS
                             trait.setValue(''); 
                             trait.target.addAttributes({ [trait.get('name')]: '' });
                             if(trait.target.get('tagName') === 'img') trait.target.set('src', '');
                             
-                            // Hilangkan Preview dan sembunyikan tombol Hapus
                             previewImg.src = '';
                             previewWrapper.style.display = 'none';
                             btn.innerHTML = '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
@@ -594,7 +589,6 @@ export default createRoute(async (c) => {
                         return div;
                     },
                     
-                    // MENJAGA SINKRONISASI SAAT PINDAH-PINDAH WIDGET
                     onUpdate({ elInput, trait }) {
                         const currentValue = trait.getValue();
                         const previewWrapper = elInput.children[0];
