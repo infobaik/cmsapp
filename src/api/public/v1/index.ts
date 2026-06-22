@@ -1,11 +1,11 @@
 import { Hono } from 'hono'
 import { setCookie } from 'hono/cookie'
-import { sign } from 'hono/jwt' // 🔥 MANFAATKAN MODUL JWT BAWAAN HONO
+import { sign } from 'hono/jwt'
 
 const app = new Hono()
 
 // =======================================================
-// 🛠️ FUNGSI BANTUAN: HASH PASSWORD SHA-256 FOR DATABASE
+// 🛠️ FUNGSI BANTUAN: HASH PASSWORD SHA-256
 // =======================================================
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -16,7 +16,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 // =======================================================
-// 1. ENDPOINT AUTHENTICATION (JWT HS256 SECURITY)
+// 1. ENDPOINT AUTHENTICATION (LOGIN & REGISTER)
 // =======================================================
 app.post('/auth/login', async (c) => {
   try {
@@ -24,44 +24,39 @@ app.post('/auth/login', async (c) => {
     const email = body.email as string
     const password = body.password as string
 
-    // Ambil data user dari database
     const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE email = ?`).bind(email).first()
     if (!user) {
        return c.redirect('/login?error=Email+atau+password+salah')
     }
 
-    // Cek kecocokan password hash
     const inputHash = await hashPassword(password)
     if (user.password_hash !== inputHash) {
        return c.redirect('/login?error=Email+atau+password+salah')
     }
 
-    // 🔥 GENERATE JWT TOKEN DENGAN ALGORITMA HS256 🔥
     const jwtSecret = c.env.JWT_SECRET || 'super-secret-key-fallback-256-bit'
     const payload = {
       id: user.id,
       role: user.role,
-      exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7) // Berlaku 7 Hari
+      exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7)
     }
     
-    // Secara bawaan, fungsi sign Hono menggunakan algoritma HS256
     const token = await sign(payload, jwtSecret)
 
-    // Simpan token JWT ke Cookie browser dengan aman
     setCookie(c, 'token', token, { 
       path: '/', 
       httpOnly: true, 
       secure: true, 
-      maxAge: 604800 // 7 hari dalam detik
+      maxAge: 604800 
     })
 
-    // Pengalihan halaman berdasarkan role
     if (user.role === 'admin') {
        return c.redirect('/admin')
     }
     return c.redirect('/user/dashboard')
 
   } catch (error: any) {
+    console.error('[AUTH-LOGIN-ERROR]', error)
     return c.redirect('/login?error=System+Error')
   }
 })
@@ -72,8 +67,11 @@ app.post('/auth/register', async (c) => {
     const name = body.name as string
     const email = body.email as string
     const password = body.password as string
-    const phone = body.phone as string
     
+    if (!name || !email || !password) {
+       return c.redirect('/register?error=Data+pendaftaran+tidak+lengkap')
+    }
+
     const exist = await c.env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first()
     if (exist) {
       return c.redirect('/register?error=Email+sudah+terdaftar')
@@ -81,13 +79,15 @@ app.post('/auth/register', async (c) => {
 
     const secureHash = await hashPassword(password)
 
-    await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, phone, role) VALUES (?, ?, ?, ?, 'member')`)
-      .bind(name, email, secureHash, phone || '').run()
+    // 🔥 PERBAIKAN MUTLAK: HAPUS KOLOM 'phone', SESUAIKAN DENGAN SKEMA DATABASE ANDA! 🔥
+    await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'member')`)
+      .bind(name, email, secureHash).run()
 
     return c.redirect('/login?success=Registrasi+berhasil,+silakan+login')
 
   } catch (error: any) {
-    return c.redirect('/register?error=System+Error')
+    console.error('[AUTH-REGISTER-ERROR]', error.message || error)
+    return c.redirect(`/register?error=System+Error:+${encodeURIComponent(error.message)}`)
   }
 })
 
@@ -116,7 +116,6 @@ app.get('/kategori/:id', async (c) => {
     const strId = String(id)
     const intId = Number(id)
 
-    // 1. Ambil Kategori Induk
     let category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(strId).first()
     if (!category) {
       category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(intId).first()
@@ -126,7 +125,6 @@ app.get('/kategori/:id', async (c) => {
       return c.json({ success: false, message: 'Kategori tidak ditemukan' }, 404)
     }
 
-    // 2. Ambil Sub-Kategori
     let subReqStr = await c.env.DB.prepare(`SELECT id, name, slug, image_url, cover_url FROM categories WHERE parent_id = ? ORDER BY name ASC`).bind(strId).all()
     let subCategories = subReqStr.results || []
     
@@ -135,7 +133,6 @@ app.get('/kategori/:id', async (c) => {
       subCategories = subReqInt.results || []
     }
 
-    // 3. Ambil Produk
     let products: any[] = []
     if (subCategories.length === 0) {
       const qStr = `SELECT p.*, pr.name as provider_name FROM products p JOIN providers pr ON p.provider_id = pr.id WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1 ORDER BY p.price ASC`
