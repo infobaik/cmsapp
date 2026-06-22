@@ -1,9 +1,63 @@
 import { Hono } from 'hono'
+import { setCookie } from 'hono/cookie'
 
 const app = new Hono()
 
 // =======================================================
-// 1. ENDPOINT PUBLIK: ROOT API
+// 🔥 1. ENDPOINT AUTHENTICATION (LOGIN & REGISTER) 🔥
+// =======================================================
+app.post('/auth/login', async (c) => {
+  try {
+    const body = await c.req.parseBody()
+    const email = body.email as string
+    const password = body.password as string
+
+    const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE email = ?`).bind(email).first()
+    
+    if (!user || user.password_hash !== password) {
+       return c.redirect('/login?error=Email+atau+password+salah')
+    }
+
+    const sessionId = crypto.randomUUID()
+    await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
+
+    setCookie(c, 'session_id', sessionId, { path: '/', httpOnly: true, secure: true, maxAge: 604800 })
+
+    if (user.role === 'admin') {
+       return c.redirect('/admin')
+    }
+    return c.redirect('/user/dashboard')
+
+  } catch (error: any) {
+    return c.redirect('/login?error=System+Error')
+  }
+})
+
+app.post('/auth/register', async (c) => {
+  try {
+    const body = await c.req.parseBody()
+    const name = body.name as string
+    const email = body.email as string
+    const password = body.password as string
+    const phone = body.phone as string
+    
+    const exist = await c.env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first()
+    if (exist) {
+      return c.redirect('/register?error=Email+sudah+terdaftar')
+    }
+
+    await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, phone, role) VALUES (?, ?, ?, ?, 'member')`)
+      .bind(name, email, password, phone || '').run()
+
+    return c.redirect('/login?success=Registrasi+berhasil,+silakan+login')
+
+  } catch (error: any) {
+    return c.redirect('/register?error=System+Error')
+  }
+})
+
+// =======================================================
+// 2. ENDPOINT PUBLIK: ROOT API
 // =======================================================
 app.get('/', (c) => {
   return c.json({
@@ -19,7 +73,7 @@ app.get('/', (c) => {
 })
 
 // =======================================================
-// 2. ENDPOINT: DETAIL KATEGORI (Murni JSON API)
+// 3. ENDPOINT: DETAIL KATEGORI (Murni JSON API)
 // =======================================================
 app.get('/kategori/:id', async (c) => {
   try {
@@ -69,7 +123,7 @@ app.get('/kategori/:id', async (c) => {
 })
 
 // =======================================================
-// 3. ENDPOINT PUBLIK: DAFTAR PRODUK (Katalog Publik)
+// 4. ENDPOINT PUBLIK: DAFTAR PRODUK (Katalog Publik)
 // =======================================================
 app.get('/produk', async (c) => {
   try {
@@ -152,7 +206,7 @@ app.get('/produk', async (c) => {
 })
 
 // ====================================================================
-// 4. ENDPOINT: PUBLIC CHECKOUT (GUEST ORDER)
+// 5. ENDPOINT: PUBLIC CHECKOUT (GUEST ORDER)
 // ====================================================================
 app.post('/checkout', async (c) => {
   try {
@@ -208,7 +262,7 @@ app.post('/checkout', async (c) => {
 });
 
 // ====================================================================
-// 5. ENDPOINT: TRACK ORDER (AMAN DENGAN NO HP)
+// 6. ENDPOINT: TRACK ORDER (AMAN DENGAN NO HP)
 // ====================================================================
 app.post('/track', async (c) => {
   try {
