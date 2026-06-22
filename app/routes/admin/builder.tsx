@@ -262,17 +262,20 @@ export default createRoute(async (c) => {
         function debounce(func, timeout = 300){ let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => { func.apply(this, args); }, timeout); }; }
     })();
 
+    // 🔥 PERBAIKAN FATAL PADA LOGIKA KATEGORI (ANTI CRASH)
     function getElementorIcon(category, id) {
-        if(category.toLowerCase().includes('header') || id.includes('hero')) return 'ph:layout-duotone';
-        if(category.toLowerCase().includes('feature')) return 'ph:squares-four-duotone';
-        if(category.toLowerCase().includes('commerce') || id.includes('price')) return 'ph:tag-duotone';
-        if(id.includes('contact')) return 'ph:envelope-simple-duotone';
-        if(id.includes('container') || id.includes('col')) return 'ph:columns-duotone';
-        if(id.includes('text')) return 'ph:text-t-duotone';
-        if(id.includes('image')) return 'ph:image-duotone';
-        if(id.includes('button')) return 'ph:mouse-left-click-duotone';
-        if(id.includes('faq') || id.includes('accordion')) return 'ph:list-dashes-duotone';
-        if(id.includes('countdown')) return 'ph:timer-duotone';
+        const c = (category || 'Custom').toLowerCase();
+        const i = (id || '').toLowerCase();
+        if(c.includes('header') || i.includes('hero')) return 'ph:layout-duotone';
+        if(c.includes('feature')) return 'ph:squares-four-duotone';
+        if(c.includes('commerce') || i.includes('price')) return 'ph:tag-duotone';
+        if(i.includes('contact')) return 'ph:envelope-simple-duotone';
+        if(i.includes('container') || i.includes('col')) return 'ph:columns-duotone';
+        if(i.includes('text')) return 'ph:text-t-duotone';
+        if(i.includes('image')) return 'ph:image-duotone';
+        if(i.includes('button')) return 'ph:mouse-left-click-duotone';
+        if(i.includes('faq') || i.includes('accordion')) return 'ph:list-dashes-duotone';
+        if(i.includes('countdown')) return 'ph:timer-duotone';
         return 'ph:cube-duotone';
     }
 
@@ -299,50 +302,78 @@ export default createRoute(async (c) => {
                 try {
                     const res = await fetch('/api/admin/v1/widgets');
                     if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
-                    const widgets = await res.json();
+                    
+                    const responseData = await res.json();
+                    
+                    // Antisipasi perbedaan format (jika API dikembalikan sebagai array murni atau object beranak)
+                    const widgets = Array.isArray(responseData) ? responseData : (responseData.data || responseData.results || []);
+                    
+                    if (!Array.isArray(widgets) || widgets.length === 0) {
+                        return this.notify('Info', 'Belum ada widget di database.', 'success');
+                    }
                     
                     widgets.forEach(w => {
-                        appBuilderCache[w.id] = w;
-                        let dbConfig = safeJSONParse(w.attributes);
+                        try {
+                            appBuilderCache[w.id] = w;
+                            let dbConfig = safeJSONParse(w.attributes);
 
-                        let compDefaults = {
-                            ...dbConfig,
-                            tagName: dbConfig.tagName || 'div',
-                            attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
-                            traits: dbConfig.traits || [],
-                            // 🔥 PERBAIKAN 1: Izinkan widget untuk digeser, diedit, dan dipilih isi dalamnya
-                            droppable: true,
-                            editable: true,
-                            hoverable: true,
-                            selectable: true
-                        };
+                            let compDefaults = {
+                                ...dbConfig,
+                                tagName: dbConfig.tagName || 'div',
+                                attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
+                                traits: dbConfig.traits || [],
+                                // 🔥 PERBAIKAN FATAL: Membuka paksa gembok GrapesJS agar widget kustom bisa diedit teksnya!
+                                droppable: true,
+                                editable: true,
+                                hoverable: true,
+                                selectable: true
+                            };
 
-                        domc.addType(w.id, {
-                            isComponent: el => {
-                                if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
-                                    return { type: w.id };
+                            // 🔥 PERBAIKAN FATAL: Mencegah Syntax Error Javascript merusak seluruh editor
+                            let scriptFn = undefined;
+                            if (w.script && w.script.trim() !== '') {
+                                try {
+                                    scriptFn = new Function(w.script);
+                                } catch (errScript) {
+                                    console.warn(\`Script error pada widget \${w.id}. Abaikan script ini.\`, errScript);
                                 }
-                            },
-                            model: { 
-                                defaults: compDefaults,
-                                script: w.script ? new Function(w.script) : undefined
                             }
-                        });
-                        
-                        if (w.category !== 'System') { 
-                            if (!bm.get(w.id)) { 
-                                bm.add(w.id, { 
-                                    label: \`
-                                        <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(w.category, w.id)}"></iconify-icon></div>
-                                        <div class="gjs-block-label">\${w.label}</div>
-                                    \`, 
-                                    category: w.category, 
-                                    content: w.content 
-                                }); 
+
+                            domc.addType(w.id, {
+                                isComponent: el => {
+                                    if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
+                                        return { type: w.id };
+                                    }
+                                },
+                                model: { 
+                                    defaults: compDefaults,
+                                    script: scriptFn
+                                }
+                            });
+                            
+                            // Amankan Kategori yang kosong agar toLowerCase() tidak meledak
+                            const safeCategory = w.category || 'Custom';
+                            
+                            if (safeCategory !== 'System') { 
+                                if (!bm.get(w.id)) { 
+                                    bm.add(w.id, { 
+                                        label: \`
+                                            <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(safeCategory, w.id)}"></iconify-icon></div>
+                                            <div class="gjs-block-label">\${w.label || w.id}</div>
+                                        \`, 
+                                        category: safeCategory, 
+                                        content: w.content 
+                                    }); 
+                                }
                             }
+                        } catch(errItem) {
+                            console.error("Gagal meload widget individual:", w.id, errItem);
                         }
                     });
-                } catch (e) { console.error("Widget Load Failed:", e); this.notify('Warning', 'Gagal memuat widget library.', 'error'); }
+                } catch (e) { 
+                    console.error("Widget Load Failed:", e); 
+                    this.notify('Warning', 'Gagal memuat widget library. Cek Console!', 'error'); 
+                }
             },
 
             async loadPageData(slug) {
