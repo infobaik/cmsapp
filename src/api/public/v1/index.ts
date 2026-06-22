@@ -196,7 +196,8 @@ app.get('/kategori/:id', async (c) => {
 app.get('/produk', async (c) => {
   try {
     const search = c.req.query('search')
-    const category = c.req.query('kategori')
+    const categorySlug = c.req.query('kategori')
+    const categoryId = c.req.query('category_id') || c.req.query('kategori_id') // Menangkap parameter ID
 
     let query = `
       SELECT 
@@ -207,6 +208,7 @@ app.get('/produk', async (c) => {
         p.order_type, 
         p.is_open_amount, 
         p.image_url,
+        c.id as category_id,   /* 🔥 PERBAIKAN: Mengambil ID Kategori */
         c.name as category_name,
         c.slug as category_slug
       FROM products p
@@ -220,9 +222,15 @@ app.get('/produk', async (c) => {
       bindParams.push(`%${search}%`)
     }
 
-    if (category) {
+    if (categorySlug) {
       query += ` AND c.slug = ?`
-      bindParams.push(category)
+      bindParams.push(categorySlug)
+    }
+
+    // 🔥 PERBAIKAN: Menambahkan filter query langsung dari database berdasarkan ID
+    if (categoryId) {
+      query += ` AND c.id = ?`
+      bindParams.push(categoryId)
     }
 
     query += ` ORDER BY c.name ASC, p.price ASC`
@@ -233,6 +241,7 @@ app.get('/produk', async (c) => {
       id_produk: item.id,
       nama_produk: item.name,
       kategori: {
+        id: item.category_id, // 🔥 PERBAIKAN: Memasukkan ID ke dalam object JSON kategori
         nama: item.category_name || 'Umum',
         slug: item.category_slug || 'umum'
       },
@@ -258,7 +267,8 @@ app.get('/produk', async (c) => {
       meta: {
         total_data: formattedData.length,
         filter_pencarian: search || null,
-        filter_kategori: category || null
+        filter_kategori_slug: categorySlug || null,
+        filter_kategori_id: categoryId || null // Menampilkan parameter ID di meta info
       },
       data: formattedData
     }, 200)
