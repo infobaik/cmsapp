@@ -41,18 +41,14 @@ export default createRoute(async (c) => {
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: #e5e7eb; }
         [x-cloak] { display: none !important; }
 
-        /* Topbar Header */
         header { height: 60px; width: 100%; position: fixed; top: 0; left: 0; z-index: 100; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 
         .workspace { position: absolute; top: 60px; bottom: 0; left: 0; right: 0; background: #f1f5f9; display: flex; overflow: hidden; }
         
-        /* Panel Kiri Khas Elementor */
         .sidebar-panel { position: relative; width: 320px; height: 100%; background: #ffffff; border-right: 1px solid #e2e8f0; z-index: 50; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* Area Canvas GrapesJS */
         #gjs { position: relative !important; flex: 1; height: 100% !important; width: auto !important; min-width: 0; overflow: hidden; background-color: #f1f5f9; }
 
-        /* Mobile Adjustments */
         .mobile-tools { display: none; height: 50px; width: 100%; position: fixed; top: 60px; left: 0; z-index: 90; background: #ffffff; border-bottom: 1px solid #e5e7eb; align-items: center; justify-content: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         @media (max-width: 768px) {
             .mobile-tools { display: flex; }
@@ -63,11 +59,9 @@ export default createRoute(async (c) => {
             .mobile-overlay.show { display: block; }
         }
 
-        /* OVERRIDES GRAPESJS AGAR TERLIHAT SEPERTI ELEMENTOR */
         .gjs-pn-views-container, .gjs-pn-panels, .gjs-pn-views, .gjs-pn-commands { display: none !important; width: 0 !important; }
         .gjs-cv-canvas { width: 100% !important; height: 100% !important; top: 0 !important; left: 0 !important; }
         
-        /* TAMPILAN BLOK WIDGET MODULAR (ELEMENTOR STYLE) */
         .gjs-block-category { border-bottom: 1px solid #e2e8f0; }
         .gjs-block-category .gjs-title { background-color: #f8fafc !important; color: #334155 !important; border-bottom: 1px solid #f1f5f9; font-weight: 700; font-size: 11px; padding: 12px 15px !important; text-transform: uppercase; letter-spacing: 0.5px; }
         .gjs-block-category .gjs-blocks-c { background-color: #ffffff; display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 0 !important; padding: 10px !important; }
@@ -79,24 +73,20 @@ export default createRoute(async (c) => {
         .gjs-block-icon { font-size: 22px !important; color: #64748b; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
         .gjs-block:hover .gjs-block-icon { color: #4f46e5; }
         
-        /* Sidebar Styling */
         .custom-scroll { overflow-y: auto; height: 100%; -webkit-overflow-scrolling: touch; }
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         
         .gjs-selected { outline: 2px solid #4f46e5 !important; outline-offset: -2px; }
         
-        /* Custom Trait Buttons & Inputs */
         .trait-custom-btn { width: 100%; padding: 10px 12px; background-color: #4f46e5; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
         .trait-custom-btn:hover { background-color: #4338ca; }
         .trait-custom-btn:disabled { background-color: #9ca3af; cursor: not-allowed; }
         
-        /* Floating Toolbar di dalam Canvas */
         .gjs-toolbar { background-color: #1e293b !important; border-radius: 6px !important; border: 1px solid #334155 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; padding: 4px !important; gap: 4px !important; }
         .gjs-toolbar-item { color: #f8fafc !important; width: 32px !important; height: 32px !important; border-radius: 4px; transition: background 0.2s; }
         .gjs-toolbar-item:hover { background: #334155 !important; color: #60a5fa !important; }
         
-        /* GrapesJS Form Inputs */
         .gjs-field { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 4px !important; color: #334155 !important; font-size: 12px !important; }
         .gjs-sm-sector .gjs-sm-title { background-color: #f8fafc !important; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; color: #1e293b !important; font-weight: bold; padding: 12px 15px !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
         .gjs-sm-properties { padding: 15px !important; }
@@ -295,7 +285,6 @@ export default createRoute(async (c) => {
                 try {
                     this.initGrapes();
                     await this.loadWidgets();
-                    // Paksa load homepage secara default
                     await this.loadPageData('homepage');
                 } catch (e) { console.error("Fatal Init Error:", e); this.notify('System Error', 'Gagal memuat editor. Cek console.', 'error'); }
             },
@@ -308,7 +297,6 @@ export default createRoute(async (c) => {
             async loadWidgets() {
                 const domc = window.editor.DomComponents; const bm = window.editor.BlockManager;
                 try {
-                    // MENGARAH KE BACKEND HONO KITA
                     const res = await fetch('/api/admin/v1/widgets');
                     if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
                     const widgets = await res.json();
@@ -321,7 +309,12 @@ export default createRoute(async (c) => {
                             ...dbConfig,
                             tagName: dbConfig.tagName || 'div',
                             attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
-                            traits: dbConfig.traits || []
+                            traits: dbConfig.traits || [],
+                            // 🔥 PERBAIKAN 1: Izinkan widget untuk digeser, diedit, dan dipilih isi dalamnya
+                            droppable: true,
+                            editable: true,
+                            hoverable: true,
+                            selectable: true
                         };
 
                         domc.addType(w.id, {
@@ -355,7 +348,6 @@ export default createRoute(async (c) => {
             async loadPageData(slug) {
                 this.loading = true;
                 try {
-                    // MENGARAH KE BACKEND HONO KITA
                     const res = await fetch(\`/api/admin/v1/builder/pages/\${slug}\`);
                     if (!res.ok) throw new Error("Gagal mengambil data halaman");
                     const data = await res.json();
@@ -386,7 +378,6 @@ export default createRoute(async (c) => {
                     html = tempDiv.innerHTML;
 
                     const payload = { slug: this.page.slug, title: this.page.title, html: html, css: css };
-                    // MENGARAH KE BACKEND HONO KITA
                     const res = await fetch('/api/admin/v1/builder/pages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
                     if(res.ok) { this.notify('Sukses', 'Halaman berhasil disimpan!'); } else { const err = await res.json(); throw new Error(err.message || 'Save failed'); }
                 } catch (e) { this.notify('Gagal', e.message, 'error'); }
@@ -406,7 +397,6 @@ export default createRoute(async (c) => {
                                 reader.onloadend = async () => {
                                     const fd = new FormData(); fd.append('file', reader.result); fd.append('filename', file.name);
                                     try {
-                                        // PENTING: Anda perlu membuat endpoint ini di src/api/admin/v1/index.ts
                                         const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: fd }); const json = await res.json();
                                         let finalData = null; if (json.data && Array.isArray(json.data)) finalData = json.data[0]; else if (json.secure_url) finalData = { src: json.secure_url, width: json.width, height: json.height };
                                         if(finalData) window.editor.AssetManager.add(finalData); else alert('Gagal parse response Cloudinary');
@@ -473,6 +463,13 @@ export default createRoute(async (c) => {
                 });
 
                 const domc = window.editor.DomComponents; const cmds = window.editor.Commands; const tm = window.editor.TraitManager; const bm = window.editor.BlockManager;
+
+                // Tambahkan perintah kustom untuk Toolbar
+                cmds.add('select-parent', {
+                    run(editor) {
+                        editor.runCommand('core:component-exit');
+                    }
+                });
 
                 tm.addType('file-upload', {
                     createInput({ trait }) {
@@ -615,14 +612,17 @@ export default createRoute(async (c) => {
 
                 window.editor.on('component:selected', () => { this.mobileMenuOpen = false; });
                 window.editor.on('block:drag:stop', () => { this.mobileMenuOpen = false; });
+                
+                // 🔥 PERBAIKAN 2: Penambahan 'pointer-events: none;' pada ikon agar klik Hapus (Delete) tembus ke GrapesJS
                 window.editor.on('component:selected', (c) => { 
                     const currentToolbar = c.get('toolbar') || [];
-                    if(currentToolbar.some(i => i.command === 'tlb-move')) return;
+                    if(currentToolbar.some(i => i.command === 'tlb-move' && i.label.includes('pointer-events: none'))) return;
+                    
                     c.set('toolbar', [
-                        { attributes: { class: 'fa fa-arrows', title: 'Geser' }, command: 'tlb-move', label: '<i class="ph ph-arrows-out-cardinal"></i>' },
-                        { attributes: { class: 'fa fa-arrow-up', title: 'Parent' }, command: (e) => e.runCommand('core:component-exit'), label: '<i class="ph ph-arrow-fat-up"></i>' },
-                        { attributes: { class: 'fa fa-clone', title: 'Duplicate' }, command: 'tlb-clone', label: '<i class="ph ph-copy"></i>' },
-                        { attributes: { class: 'fa fa-trash', title: 'Delete' }, command: 'tlb-delete', label: '<i class="ph ph-trash text-red-400"></i>' }
+                        { attributes: { title: 'Geser' }, command: 'tlb-move', label: '<i class="ph ph-arrows-out-cardinal" style="pointer-events: none; font-size: 16px;"></i>' },
+                        { attributes: { title: 'Pilih Parent' }, command: 'select-parent', label: '<i class="ph ph-arrow-fat-up" style="pointer-events: none; font-size: 16px;"></i>' },
+                        { attributes: { title: 'Duplikat' }, command: 'tlb-clone', label: '<i class="ph ph-copy" style="pointer-events: none; font-size: 16px;"></i>' },
+                        { attributes: { title: 'Hapus' }, command: 'tlb-delete', label: '<i class="ph ph-trash text-red-400" style="pointer-events: none; font-size: 16px;"></i>' }
                     ]);
                 });
             }
