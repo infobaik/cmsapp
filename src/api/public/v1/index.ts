@@ -1,11 +1,10 @@
 import { Hono } from 'hono'
 import { setCookie } from 'hono/cookie'
-import { sign } from 'hono/jwt'
 
 const app = new Hono()
 
 // =======================================================
-// 🛠️ FUNGSI PINTAR: PARSER REQUEST (ANTI-KOSONG / ANTI-JSON-ERROR)
+// 🛠️ FUNGSI PINTAR: PARSER REQUEST
 // =======================================================
 async function getRequestBody(c: any) {
   const contentType = c.req.header('content-type') || ''
@@ -27,65 +26,49 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 // =======================================================
-// 1. ENDPOINT AUTHENTICATION (LOGIN & REGISTER SUDAH FIXED)
+// 1. ENDPOINT AUTHENTICATION (SINKRON DENGAN MIDDLEWARE)
 // =======================================================
 app.post('/auth/login', async (c) => {
   try {
-    // 🔥 PERBAIKAN FATAL: Menggunakan parser pintar agar bisa membaca payload JSON maupun Form
     const body = await getRequestBody(c)
     const email = body.email as string
     const password = body.password as string
 
-    console.log(`[LOGIN-TRY] Memproses login untuk email: '${email}'`)
-
     if (!email || !password) {
-      console.error(`[LOGIN-FAIL] Input tidak lengkap. Email atau password kosong.`)
-      return c.redirect('/login?error=Email+dan+password+wajib+diisi')
+      return c.redirect('/login?error=invalid_credentials')
     }
 
-    // Cari user di database
+    // 1. Cek User
     const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE email = ?`).bind(email).first()
     if (!user) {
-       console.warn(`[LOGIN-FAIL] User dengan email '${email}' tidak ditemukan di database.`)
-       return c.redirect('/login?error=Email+atau+password+salah')
+       return c.redirect('/login?error=invalid_credentials')
     }
 
-    // Hash input password dan bandingkan
+    // 2. Verifikasi Password
     const inputHash = await hashPassword(password)
-    console.log(`[LOGIN-HASH-CHECK] DB Hash: '${user.password_hash}' VS Input Hash: '${inputHash}'`)
-
     if (user.password_hash !== inputHash) {
-       console.warn(`[LOGIN-FAIL] Password tidak cocok untuk email: '${email}'`)
-       return c.redirect('/login?error=Email+atau+password+salah')
+       return c.redirect('/login?error=invalid_credentials')
     }
 
-    // Buat JWT Token aman (HS256)
-    const jwtSecret = c.env.JWT_SECRET || 'super-secret-key-fallback-256-bit'
-    const payload = {
-      id: user.id,
-      role: user.role,
-      exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7) // Berlaku 7 hari
-    }
-    
-    const token = await sign(payload, jwtSecret)
+    // 3. Buat Session (Sesuai dengan _middleware.ts)
+    const sessionId = globalThis.crypto.randomUUID()
+    await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
 
-    // Set token ke cookie browser
-    setCookie(c, 'token', token, { 
+    // 4. Set Cookie (🔥 PERBAIKAN FATAL: Tanpa secure: true agar tidak diblokir browser saat testing!)
+    setCookie(c, 'session_id', sessionId, { 
       path: '/', 
       httpOnly: true, 
-      secure: true, 
       maxAge: 604800 
     })
 
-    console.log(`[LOGIN-SUCCESS] Pengguna '${email}' sukses login sebagai role: ${user.role}`)
-
+    // 5. Arahkan sesuai Role
     if (user.role === 'admin') {
        return c.redirect('/admin')
     }
     return c.redirect('/user/dashboard')
 
   } catch (error: any) {
-    console.error(`[LOGIN-CRASH] Terjadi crash internal pada sistem login:`, error.message)
+    console.error(`[LOGIN-CRASH]`, error.message)
     return c.redirect('/login?error=System+Error')
   }
 })
@@ -97,31 +80,25 @@ app.post('/auth/register', async (c) => {
     const email = body.email as string
     const password = body.password as string
     
-    console.log(`[REGISTER-TRY] Memproses pendaftaran email baru: '${email}'`)
-
     if (!name || !email || !password) {
-       console.error(`[REGISTER-FAIL] Data form pendaftaran tidak lengkap atau kosong.`)
-       return c.redirect('/register?error=Data+pendaftaran+tidak+lengkap')
+       return c.redirect('/register?error=Data+tidak+lengkap')
     }
 
     const exist = await c.env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first()
     if (exist) {
-      console.warn(`[REGISTER-FAIL] Pendaftaran ditolak. Email '${email}' sudah terdaftar.`)
-      return c.redirect('/register?error=Email+sudah+terdaftar')
+      return c.redirect('/register?error=email_exists')
     }
 
     const secureHash = await hashPassword(password)
 
-    // Simpan ke database tanpa kolom phone yang ilegal
     await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'member')`)
       .bind(name, email, secureHash).run()
 
-    console.log(`[REGISTER-SUCCESS] Akun baru dengan email '${email}' berhasil disimpan ke database.`)
-    return c.redirect('/login?success=Registrasi+berhasil,+silakan+login')
+    return c.redirect('/login?success=Registrasi+berhasil')
 
   } catch (error: any) {
-    console.error(`[REGISTER-CRASH] Terjadi crash internal pada sistem pendaftaran:`, error.message)
-    return c.redirect(`/register?error=System+Error:+${encodeURIComponent(error.message)}`)
+    console.error(`[REGISTER-CRASH]`, error.message)
+    return c.redirect('/register?error=System+Error')
   }
 })
 
