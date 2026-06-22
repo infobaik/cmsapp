@@ -3,89 +3,32 @@ import { createRoute } from 'honox/factory'
 export default createRoute(async (c) => {
   const id = c.req.param('id')
   
-  console.log(`[DEBUG-1] Request masuk ke kategori publik dengan parameter URL ID: '${id}'`);
+  // 1. Ambil domain otomatis (localhost saat dev, pages.dev saat prod)
+  const origin = new URL(c.req.url).origin
+  
+  // 2. Tembak endpoint API Publik
+  // Sesuaikan path '/api/public/v1' jika struktur router API-mu berbeda
+  const res = await fetch(`${origin}/api/public/v1/kategori/${id}`)
+  const json = await res.json()
 
-  // 1. CEK KATEGORI SAAT INI 
-  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
-  console.log(`[DEBUG-2] Hasil Query Kategori Induk:`, JSON.stringify(category));
-
-  if (!category) {
-    console.log(`[DEBUG-FAIL] Kategori dengan ID '${id}' tidak ditemukan di database. Return 404.`);
+  // Jika API me-return gagal / tidak ketemu
+  if (!json.success || !json.data) {
     return c.notFound()
   }
 
-  // 2. AMBIL PENGATURAN UI GLOBAL
+  // 3. Ekstrak data dari API
+  const { category, sub_categories: subCategories, products } = json.data
+
+  // 4. Ambil Pengaturan UI (Tetap query ke D1 karena ini ranah spesifik UI Halaman)
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
   if (sysSettings) {
     sysSettings.forEach((row: any) => { settings[row.key] = row.value })
   }
 
-  // Siapkan dua jenis peluru untuk menjebol SQLite (Teks & Angka)
-  const strId = String(category.id);
-  const intId = Number(category.id);
-  console.log(`[DEBUG-3] Tipe ID Tersimpan -> String: '${strId}', Integer: ${intId}`);
-
-  // 3. AMBIL SUB KATEGORI (Tembakan Pertama: Mode String)
-  console.log(`[DEBUG-4] Mencari Sub-Kategori dengan parent_id = '${strId}' (Mode String)`);
-  const subReqStr = await c.env.DB.prepare(`
-    SELECT id, name, slug, image_url, cover_url 
-    FROM categories 
-    WHERE parent_id = ? 
-    ORDER BY name ASC
-  `).bind(strId).all();
-  
-  let subCategories = subReqStr.results || [];
-  console.log(`[DEBUG-5] Hasil Sub-Kategori (String): Ditemukan ${subCategories.length} data.`);
-
-  // JIKA GAGAL, Tembakan Kedua: Mode Angka (Integer)
-  if (subCategories.length === 0) {
-     console.log(`[DEBUG-6] Mencari Sub-Kategori fallback dengan parent_id = ${intId} (Mode Integer)`);
-     const subReqInt = await c.env.DB.prepare(`
-        SELECT id, name, slug, image_url, cover_url 
-        FROM categories 
-        WHERE parent_id = ? 
-        ORDER BY name ASC
-      `).bind(intId).all();
-      subCategories = subReqInt.results || [];
-      console.log(`[DEBUG-7] Hasil Sub-Kategori (Integer): Ditemukan ${subCategories.length} data.`);
-  }
-
-  // 4. AMBIL PRODUK (Hanya dieksekusi jika kategori ini benar-benar tidak punya sub/anak)
-  let products: any[] = [];
-  if (subCategories.length === 0) {
-    console.log(`[DEBUG-8] Tidak ada Sub-Kategori. Lanjut mencari Produk untuk category_id = '${strId}'`);
-    
-    // Tembakan Pertama: Mode String
-    const prodReqStr = await c.env.DB.prepare(`
-      SELECT p.*, pr.name as provider_name 
-      FROM products p
-      JOIN providers pr ON p.provider_id = pr.id
-      WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
-      ORDER BY p.price ASC
-    `).bind(strId).all();
-    products = prodReqStr.results || [];
-    console.log(`[DEBUG-9] Hasil Produk (String): Ditemukan ${products.length} data.`);
-
-    // JIKA GAGAL, Tembakan Kedua: Mode Angka (Integer)
-    if (products.length === 0) {
-       console.log(`[DEBUG-10] Mencari Produk fallback dengan category_id = ${intId} (Mode Integer)`);
-       const prodReqInt = await c.env.DB.prepare(`
-          SELECT p.*, pr.name as provider_name 
-          FROM products p
-          JOIN providers pr ON p.provider_id = pr.id
-          WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
-          ORDER BY p.price ASC
-        `).bind(intId).all();
-        products = prodReqInt.results || [];
-        console.log(`[DEBUG-11] Hasil Produk (Integer): Ditemukan ${products.length} data.`);
-    }
-  }
-
-  // Cek apakah ini Voucher
   const isVoucher = String(category.name || '').toLowerCase().includes('voucher')
 
-  // Logika CSS UI
+  // Logika Class CSS UI
   const coverVis = settings.ui_cat_cover_vis || 'all'
   const iconVis = settings.ui_cat_icon_vis || 'all'
 
@@ -99,19 +42,20 @@ export default createRoute(async (c) => {
   const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
   const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
+  // 5. Render HTML Lengkap
   return c.render(
     <div class="max-w-5xl mx-auto space-y-6 pb-12">
       
       {/* HEADER KATEGORI */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
          {category.cover_url ? (
-           <img src={category.cover_url as string} alt={category.name as string} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+           <img src={category.cover_url} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          ) : (
            <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-800 to-slate-900 opacity-80"></div>
          )}
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name as string}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base">
              {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
@@ -139,15 +83,15 @@ export default createRoute(async (c) => {
                 <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
                   {iconVis !== 'hidden' && (
-                     <div class={iconClass}>
-                       {cat.image_url ? (
-                         <img src={cat.image_url} alt={cat.name} class="w-full h-full object-contain drop-shadow-md" />
-                       ) : (
-                         <div class="w-full h-full bg-slate-500/50 rounded flex items-center justify-center">
-                           <span class="text-white text-xs font-bold">Ico</span>
-                         </div>
-                       )}
-                     </div>
+                      <div class={iconClass}>
+                        {cat.image_url ? (
+                          <img src={cat.image_url} alt={cat.name} class="w-full h-full object-contain drop-shadow-md" />
+                        ) : (
+                          <div class="w-full h-full bg-slate-500/50 rounded flex items-center justify-center">
+                            <span class="text-white text-xs font-bold">Ico</span>
+                          </div>
+                        )}
+                      </div>
                   )}
                   <h3 class="font-bold text-white text-[12px] md:text-[14px] leading-snug line-clamp-2 drop-shadow-lg group-hover:text-indigo-300 transition-colors">
                     {cat.name}
@@ -172,57 +116,57 @@ export default createRoute(async (c) => {
             <div id="checkoutArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                {/* KOLOM KIRI: INPUT DATA & DAFTAR PRODUK */}
                <div class="md:col-span-2 space-y-6">
-                  
-                  {/* Form Tujuan */}
-                  <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-                     <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                       <span class="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
-                       Data Tujuan
-                     </h2>
-                     <div class="space-y-4">
-                       <div>
-                         <label class="block text-sm font-semibold text-slate-600 mb-1">Nomor HP / Tujuan <span class="text-red-500">*</span></label>
-                         <input type="text" id="customerNumber" required placeholder="Contoh: 08123456789" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all font-mono" />
-                         {isVoucher && <p class="text-[11px] font-semibold text-amber-600 mt-1.5 flex gap-1"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg> Ingat Nomor HP ini! Ini adalah Password untuk melihat Kode Voucher nanti.</p>}
-                       </div>
-                       <div>
-                         <label class="block text-sm font-semibold text-slate-600 mb-1">Email (Opsional)</label>
-                         <input type="email" id="guestEmail" placeholder="Budi@gmail.com (Untuk kirim Invoice/Voucher)" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all" />
-                       </div>
-                     </div>
-                  </div>
+                 
+                 {/* Form Tujuan */}
+                 <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+                    <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <span class="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
+                      Data Tujuan
+                    </h2>
+                    <div class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-semibold text-slate-600 mb-1">Nomor HP / Tujuan <span class="text-red-500">*</span></label>
+                        <input type="text" id="customerNumber" required placeholder="Contoh: 08123456789" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all font-mono" />
+                        {isVoucher && <p class="text-[11px] font-semibold text-amber-600 mt-1.5 flex gap-1"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg> Ingat Nomor HP ini! Ini adalah Password untuk melihat Kode Voucher nanti.</p>}
+                      </div>
+                      <div>
+                        <label class="block text-sm font-semibold text-slate-600 mb-1">Email (Opsional)</label>
+                        <input type="email" id="guestEmail" placeholder="Budi@gmail.com (Untuk kirim Invoice/Voucher)" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all" />
+                      </div>
+                    </div>
+                 </div>
 
-                  {/* Pilih Produk */}
-                  <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-                     <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                       <span class="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">2</span> 
-                       Pilih Nominal
-                     </h2>
-                     
-                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                       {products.map((p: any) => (
-                         <label class="relative cursor-pointer group h-full">
-                           <input type="radio" name="product_id" value={p.id} data-price={p.price} data-name={p.name} data-is-open={p.is_open_amount} class="peer sr-only" />
-                           <div class="border border-slate-200 rounded-xl p-4 text-center peer-checked:border-indigo-600 peer-checked:bg-indigo-50 hover:border-indigo-300 transition-all h-full flex flex-col justify-center min-h-[80px]">
-                             <h3 class="font-bold text-slate-700 text-sm leading-tight">{p.name}</h3>
-                             {p.is_open_amount === 1 ? (
-                               <p class="text-xs text-slate-500 mt-1">+ Rp {p.price.toLocaleString('id-ID')} (Admin)</p>
-                             ) : (
-                               <p class="text-sm font-bold text-indigo-600 mt-1">Rp {p.price.toLocaleString('id-ID')}</p>
-                             )}
-                           </div>
-                           <div class="absolute top-2 right-2 hidden peer-checked:block text-indigo-600 bg-white rounded-full">
-                             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                           </div>
-                         </label>
-                       ))}
-                     </div>
+                 {/* Pilih Produk */}
+                 <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+                    <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <span class="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-sm">2</span> 
+                      Pilih Nominal
+                    </h2>
+                    
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {products.map((p: any) => (
+                        <label class="relative cursor-pointer group h-full">
+                          <input type="radio" name="product_id" value={p.id} data-price={p.price} data-name={p.name} data-is-open={p.is_open_amount} class="peer sr-only" />
+                          <div class="border border-slate-200 rounded-xl p-4 text-center peer-checked:border-indigo-600 peer-checked:bg-indigo-50 hover:border-indigo-300 transition-all h-full flex flex-col justify-center min-h-[80px]">
+                            <h3 class="font-bold text-slate-700 text-sm leading-tight">{p.name}</h3>
+                            {p.is_open_amount === 1 ? (
+                              <p class="text-xs text-slate-500 mt-1">+ Rp {p.price.toLocaleString('id-ID')} (Admin)</p>
+                            ) : (
+                              <p class="text-sm font-bold text-indigo-600 mt-1">Rp {p.price.toLocaleString('id-ID')}</p>
+                            )}
+                          </div>
+                          <div class="absolute top-2 right-2 hidden peer-checked:block text-indigo-600 bg-white rounded-full">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
 
-                     <div id="openAmountContainer" class="hidden mt-4 pt-4 border-t border-slate-100">
-                       <label class="block text-sm font-semibold text-slate-600 mb-1">Nominal Topup (Min. Rp 1.000)</label>
-                       <input type="number" id="openAmountInput" placeholder="Contoh: 150000" min="1000" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all font-mono font-bold text-indigo-700 text-lg" />
-                     </div>
-                  </div>
+                    <div id="openAmountContainer" class="hidden mt-4 pt-4 border-t border-slate-100">
+                      <label class="block text-sm font-semibold text-slate-600 mb-1">Nominal Topup (Min. Rp 1.000)</label>
+                      <input type="number" id="openAmountInput" placeholder="Contoh: 150000" min="1000" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all font-mono font-bold text-indigo-700 text-lg" />
+                    </div>
+                 </div>
 
                </div>
 
