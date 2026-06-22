@@ -1,42 +1,49 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // 🔥 KEMBALIKAN SESUAI MEMBER AREA: String murni dari parameter URL
-  const id = c.req.param('id')
-  if (!id) return c.notFound()
+  const paramId = c.req.param('id')
+  if (!paramId) return c.notFound()
 
-  // 1. CEK KATEGORI SAAT INI (100% Sama dengan Member Area)
-  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
+  // 1. CEK KATEGORI SAAT INI 
+  // (SQLite otomatis bisa mencari primary key meski dengan string paramId)
+  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(paramId).first()
   if (!category) return c.notFound()
+
+  // 🔥 PERBAIKAN FATAL: Ambil ID dengan tipe data ASLI (Integer) dari database!
+  const realCategoryId = category.id
 
   // 2. AMBIL PENGATURAN UI GLOBAL
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
-  sysSettings.forEach((row: any) => { settings[row.key] = row.value })
+  if (sysSettings) {
+    sysSettings.forEach((row: any) => { settings[row.key] = row.value })
+  }
 
-  // 3. AMBIL SUB KATEGORI (100% Sama dengan Member Area)
-  const { results: subCategories } = await c.env.DB.prepare(`
+  // 3. AMBIL SUB KATEGORI MENGGUNAKAN ID ASLI (INTEGER)
+  const subReq = await c.env.DB.prepare(`
     SELECT id, name, slug, image_url, cover_url 
     FROM categories 
     WHERE parent_id = ? 
     ORDER BY name ASC
-  `).bind(id).all()
+  `).bind(realCategoryId).all()
+  
+  const subCategories = subReq.results || []
 
-  // 4. AMBIL PRODUK (100% Sama dengan Member Area, Hanya jika tidak ada sub-kategori)
+  // 4. AMBIL PRODUK (Hanya jika tidak ada sub-kategori)
   let products: any[] = []
   if (subCategories.length === 0) {
-    const { results } = await c.env.DB.prepare(`
+    const prodReq = await c.env.DB.prepare(`
       SELECT p.*, pr.name as provider_name 
       FROM products p
       JOIN providers pr ON p.provider_id = pr.id
       WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
       ORDER BY p.price ASC
-    `).bind(id).all()
-    products = results || []
+    `).bind(realCategoryId).all()
+    products = prodReq.results || []
   }
 
   // Pengecekan Kategori Voucher untuk Peringatan Keamanan
-  const isVoucher = String(category.name).toLowerCase().includes('voucher')
+  const isVoucher = String(category.name || '').toLowerCase().includes('voucher')
 
   // Logika CSS UI Kategori
   const coverVis = settings.ui_cat_cover_vis || 'all'
@@ -58,13 +65,13 @@ export default createRoute(async (c) => {
       {/* HEADER KATEGORI (BANNER) */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
          {category.cover_url ? (
-           <img src={category.cover_url} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+           <img src={category.cover_url as string} alt={category.name as string} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          ) : (
            <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-800 to-slate-900 opacity-80"></div>
          )}
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name as string}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base">
              {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
@@ -75,7 +82,7 @@ export default createRoute(async (c) => {
         /* ======================================================== */
         /* FASE 1: TAMPILKAN GRID SUB-KATEGORI (JIKA ADA)           */
         /* ======================================================== */
-        <div class="px-2">
+        <div class="px-2 mt-8">
           <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
             {subCategories.map((cat: any) => (
               <a 
@@ -114,7 +121,7 @@ export default createRoute(async (c) => {
         /* ======================================================== */
         /* FASE 2: TAMPILKAN CHECKOUT PRODUK (JIKA TIDAK ADA SUB)   */
         /* ======================================================== */
-        <div class="mt-4">
+        <div class="mt-8">
           <div id="checkoutArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">
              {/* KOLOM KIRI: INPUT DATA & DAFTAR PRODUK */}
              <div class="md:col-span-2 space-y-6">
@@ -400,6 +407,6 @@ export default createRoute(async (c) => {
         }
       `}} />
     </div>,
-    { title: `Beli ${category.name}` }
+    { title: `Beli ${category.name || 'Layanan'}` }
   )
 })
