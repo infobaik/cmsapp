@@ -336,7 +336,7 @@ export default createRoute(async (c) => {
 
                             let dbConfig = safeJSONParse(w.attributes);
 
-                            // 🔥 PERBAIKAN MUTLAK GrapesJS: Tambahkan 'data-widget-id' agar atribut terselamatkan saat disave ke HTML
+                            // 🔥 PENGAMAN ANTI-HILANG 1: 'data-widget-id' tetap di-embed di defaults
                             let compDefaults = {
                                 ...dbConfig,
                                 tagName: dbConfig.tagName || 'div',
@@ -352,14 +352,26 @@ export default createRoute(async (c) => {
 
                             domc.addType(safeId, {
                                 isComponent: el => {
-                                    // 🔥 PERBAIKAN MUTLAK GrapesJS: Cek 'data-widget-id' karena 'data-gjs-type' pasti akan terhapus oleh Grapes saat export HTML
+                                    // 🔥 PENGAMAN ANTI-HILANG 2: Pengecekan multi-layer (Attribute & Class)
                                     if (el.getAttribute && (el.getAttribute('data-gjs-type') === safeId || el.getAttribute('data-widget-id') === safeId)) {
+                                        return { type: safeId };
+                                    }
+                                    if (el.classList && el.classList.contains('gjs-widget-' + safeId)) {
                                         return { type: safeId };
                                     }
                                 },
                                 model: { 
                                     defaults: compDefaults,
-                                    script: scriptFn
+                                    script: scriptFn,
+                                    init() {
+                                        // 🔥 PENGAMAN ANTI-HILANG 3: Memaksa inject 'class' karena class TIDAK AKAN PERNAH DIBUANG saat HTML disave
+                                        try {
+                                            if (this.addClass) this.addClass('gjs-widget-' + safeId);
+                                            const attrs = this.getAttributes();
+                                            attrs['data-widget-id'] = safeId;
+                                            this.setAttributes(attrs);
+                                        } catch(e) {}
+                                    }
                                 }
                             });
                             
