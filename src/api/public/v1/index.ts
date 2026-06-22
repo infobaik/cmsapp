@@ -39,7 +39,7 @@ app.post('/auth/login', async (c) => {
       return c.redirect('/login?error=invalid_credentials')
     }
     
-    // 🔥 PERBAIKAN 1: Pastikan email selalu huruf kecil tanpa spasi
+    // Pastikan email selalu huruf kecil tanpa spasi
     const email = rawEmail.trim().toLowerCase()
 
     // Cek User (Menggunakan LOWER agar kebal salah ketik huruf besar/kecil)
@@ -52,10 +52,7 @@ app.post('/auth/login', async (c) => {
     const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
     const inputHash = await hashPassword(password, jwtSecret)
 
-    // 🔥 PERBAIKAN FATAL 2: TRIPLE CHECK PASSWORD (Agar akun lama tetap bisa login)
-    // 1. Cek format baru (Hash + JWT Secret)
-    // 2. Cek format lama (Hash Murni tanpa Secret yg barusan Anda buat)
-    // 3. Cek format jadul (Plain Text murni / tidak di-hash sama sekali)
+    // TRIPLE CHECK PASSWORD (Agar akun lama tetap bisa login)
     const pureHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
     const pureHash = Array.from(new Uint8Array(pureHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
 
@@ -63,7 +60,7 @@ app.post('/auth/login', async (c) => {
        return c.redirect('/login?error=invalid_credentials')
     }
 
-    // Buat Session ke Database (Sesuai dengan `_middleware.ts` Anda!)
+    // Buat Session ke Database
     const sessionId = globalThis.crypto.randomUUID()
     await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
 
@@ -109,8 +106,15 @@ app.post('/auth/register', async (c) => {
     const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
     const secureHash = await hashPassword(password, jwtSecret)
 
-    await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'member')`)
-      .bind(name, email, secureHash).run()
+    // 🔥 PERBAIKAN FATAL: Menambahkan RETURNING id dan membuatkan dompet (wallet) awal
+    // Menggunakan .first() agar bisa mengambil data ID dari row yang baru saja disisipkan
+    const newUser = await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'member') RETURNING id`)
+      .bind(name, email, secureHash).first<{ id: number }>()
+
+    if (newUser && newUser.id) {
+       // Inisialisasi Dompet agar Dashboard tidak Crash saat login
+       await c.env.DB.prepare(`INSERT INTO wallets (user_id, balance_available, balance_pending) VALUES (?, 0, 0)`).bind(newUser.id).run()
+    }
 
     return c.redirect('/login?success=Registrasi+berhasil')
 
