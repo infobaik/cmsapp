@@ -1,25 +1,30 @@
 import { createRoute } from 'honox/factory'
 import { getCookie } from 'hono/cookie'
+import { verify } from 'hono/jwt'
 
 export default createRoute(async (c, next) => {
-  const sessionId = getCookie(c, 'session_id')
+  // 1. Ambil cookie 'token' hasil dari login JWT tadi
+  const token = getCookie(c, 'token')
 
-  // Catatan: Di file service nanti kita buat fungsi getSession()
-  // Untuk saat ini kita simulasikan pengecekan ke DB
   let user = null
   
-  if (sessionId) {
+  if (token) {
     try {
-      // Query ke D1 untuk mencari user berdasarkan sesi
-      const query = `
-        SELECT users.id, users.name, users.email, users.role 
-        FROM users 
-        JOIN sessions ON users.id = sessions.user_id 
-        WHERE sessions.id = ? AND sessions.expires_at > CURRENT_TIMESTAMP
-      `
-      user = await c.env.DB.prepare(query).bind(sessionId).first()
+      const jwtSecret = c.env.JWT_SECRET || 'fallback-secret-key-123'
+      
+      // 2. Verifikasi dan ekstrak isi JWT
+      // Tidak perlu lagi query SELECT ke database D1! Jauh lebih cepat!
+      const payload = await verify(token, jwtSecret)
+      
+      user = {
+        id: payload.id,
+        name: payload.name,
+        email: payload.email,
+        role: payload.role
+      }
     } catch (e) {
-      console.error("Session DB Error:", e)
+      console.error("JWT Verification Error:", e)
+      // Jika token expired atau dimanipulasi, user tetap null (otomatis ter-logout)
     }
   }
 
