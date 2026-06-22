@@ -15,11 +15,12 @@ async function getRequestBody(c: any) {
 }
 
 // =======================================================
-// 🛠️ FUNGSI BANTUAN: HASH PASSWORD SHA-256
+// 🛠️ FUNGSI BANTUAN: HASH PASSWORD (AMAN DENGAN JWT_SECRET)
 // =======================================================
-async function hashPassword(password: string): Promise<string> {
+async function hashPassword(password: string, secret: string): Promise<string> {
   const encoder = new TextEncoder()
-  const data = encoder.encode(password)
+  // 🔥 KEAMANAN TINGKAT TINGGI: Password digabung dengan JWT_SECRET sebelum di-hash
+  const data = encoder.encode(password + secret)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
@@ -44,17 +45,19 @@ app.post('/auth/login', async (c) => {
        return c.redirect('/login?error=invalid_credentials')
     }
 
-    // 2. Verifikasi Password
-    const inputHash = await hashPassword(password)
+    // 2. Verifikasi Password dengan JWT_SECRET
+    const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
+    const inputHash = await hashPassword(password, jwtSecret)
+    
     if (user.password_hash !== inputHash) {
        return c.redirect('/login?error=invalid_credentials')
     }
 
-    // 3. Buat Session (Sesuai dengan _middleware.ts)
+    // 3. Buat Session (Sesuai dengan _middleware.ts Anda yang ngecek ke DB)
     const sessionId = globalThis.crypto.randomUUID()
     await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
 
-    // 4. Set Cookie (🔥 PERBAIKAN FATAL: Tanpa secure: true agar tidak diblokir browser saat testing!)
+    // 4. Set Cookie (Tanpa secure: true agar lancar dites di local)
     setCookie(c, 'session_id', sessionId, { 
       path: '/', 
       httpOnly: true, 
@@ -89,7 +92,9 @@ app.post('/auth/register', async (c) => {
       return c.redirect('/register?error=email_exists')
     }
 
-    const secureHash = await hashPassword(password)
+    // Enkripsi password menggunakan JWT_SECRET
+    const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
+    const secureHash = await hashPassword(password, jwtSecret)
 
     await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'member')`)
       .bind(name, email, secureHash).run()
@@ -127,6 +132,7 @@ app.get('/kategori/:id', async (c) => {
     const strId = String(id)
     const intId = Number(id)
 
+    // 1. Ambil Kategori Induk
     let category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(strId).first()
     if (!category) {
       category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(intId).first()
@@ -136,6 +142,7 @@ app.get('/kategori/:id', async (c) => {
       return c.json({ success: false, message: 'Kategori tidak ditemukan' }, 404)
     }
 
+    // 2. Ambil Sub-Kategori
     let subReqStr = await c.env.DB.prepare(`SELECT id, name, slug, image_url, cover_url FROM categories WHERE parent_id = ? ORDER BY name ASC`).bind(strId).all()
     let subCategories = subReqStr.results || []
     
@@ -144,6 +151,7 @@ app.get('/kategori/:id', async (c) => {
       subCategories = subReqInt.results || []
     }
 
+    // 3. Ambil Produk
     let products: any[] = []
     if (subCategories.length === 0) {
       const qStr = `SELECT p.*, pr.name as provider_name FROM products p JOIN providers pr ON p.provider_id = pr.id WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1 ORDER BY p.price ASC`
