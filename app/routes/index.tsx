@@ -1,10 +1,10 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  // AMBIL PENGATURAN UI GLOBAL
+  // AMBIL PENGATURAN UI GLOBAL (Ditambahkan pengaman array kosong)
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
-  sysSettings.forEach((row: any) => { settings[row.key] = row.value })
+  ;(sysSettings || []).forEach((row: any) => { settings[row.key] = row.value })
 
   // AMBIL KATEGORI PUBLIC
   const { results: categories } = await c.env.DB.prepare(
@@ -45,7 +45,8 @@ export default createRoute(async (c) => {
         <h3 class="text-xl font-bold text-slate-800 mb-6">Pilih Layanan</h3>
         
         <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
-          {categories.map((cat: any) => (
+          {/* 🔥 DITAMBAHKAN PENGAMAN (categories || []) AGAR TIDAK CRASH JIKA KOSONG */}
+          {(categories || []).map((cat: any) => (
             <a 
               href={`/kategori/${cat.id}`} /* 🔥 PERBAIKAN MUTLAK: SEKARANG MENGGUNAKAN ID! */
               class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-slate-900 transform hover:-translate-y-1"
