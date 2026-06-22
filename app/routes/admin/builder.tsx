@@ -41,14 +41,18 @@ export default createRoute(async (c) => {
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: #e5e7eb; }
         [x-cloak] { display: none !important; }
 
+        /* Topbar Header */
         header { height: 60px; width: 100%; position: fixed; top: 0; left: 0; z-index: 100; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 
         .workspace { position: absolute; top: 60px; bottom: 0; left: 0; right: 0; background: #f1f5f9; display: flex; overflow: hidden; }
         
+        /* Panel Kiri Khas Elementor */
         .sidebar-panel { position: relative; width: 320px; height: 100%; background: #ffffff; border-right: 1px solid #e2e8f0; z-index: 50; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         
+        /* Area Canvas GrapesJS */
         #gjs { position: relative !important; flex: 1; height: 100% !important; width: auto !important; min-width: 0; overflow: hidden; background-color: #f1f5f9; }
 
+        /* Mobile Adjustments */
         .mobile-tools { display: none; height: 50px; width: 100%; position: fixed; top: 60px; left: 0; z-index: 90; background: #ffffff; border-bottom: 1px solid #e5e7eb; align-items: center; justify-content: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         @media (max-width: 768px) {
             .mobile-tools { display: flex; }
@@ -59,9 +63,11 @@ export default createRoute(async (c) => {
             .mobile-overlay.show { display: block; }
         }
 
+        /* OVERRIDES GRAPESJS AGAR TERLIHAT SEPERTI ELEMENTOR */
         .gjs-pn-views-container, .gjs-pn-panels, .gjs-pn-views, .gjs-pn-commands { display: none !important; width: 0 !important; }
         .gjs-cv-canvas { width: 100% !important; height: 100% !important; top: 0 !important; left: 0 !important; }
         
+        /* TAMPILAN BLOK WIDGET MODULAR (ELEMENTOR STYLE) */
         .gjs-block-category { border-bottom: 1px solid #e2e8f0; }
         .gjs-block-category .gjs-title { background-color: #f8fafc !important; color: #334155 !important; border-bottom: 1px solid #f1f5f9; font-weight: 700; font-size: 11px; padding: 12px 15px !important; text-transform: uppercase; letter-spacing: 0.5px; }
         .gjs-block-category .gjs-blocks-c { background-color: #ffffff; display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 0 !important; padding: 10px !important; }
@@ -73,20 +79,24 @@ export default createRoute(async (c) => {
         .gjs-block-icon { font-size: 22px !important; color: #64748b; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
         .gjs-block:hover .gjs-block-icon { color: #4f46e5; }
         
+        /* Sidebar Styling */
         .custom-scroll { overflow-y: auto; height: 100%; -webkit-overflow-scrolling: touch; }
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         
         .gjs-selected { outline: 2px solid #4f46e5 !important; outline-offset: -2px; }
         
+        /* Custom Trait Buttons & Inputs */
         .trait-custom-btn { width: 100%; padding: 10px 12px; background-color: #4f46e5; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
         .trait-custom-btn:hover { background-color: #4338ca; }
         .trait-custom-btn:disabled { background-color: #9ca3af; cursor: not-allowed; }
         
+        /* Floating Toolbar di dalam Canvas */
         .gjs-toolbar { background-color: #1e293b !important; border-radius: 6px !important; border: 1px solid #334155 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; padding: 4px !important; gap: 4px !important; }
         .gjs-toolbar-item { color: #f8fafc !important; width: 32px !important; height: 32px !important; border-radius: 4px; transition: background 0.2s; }
         .gjs-toolbar-item:hover { background: #334155 !important; color: #60a5fa !important; }
         
+        /* GrapesJS Form Inputs */
         .gjs-field { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 4px !important; color: #334155 !important; font-size: 12px !important; }
         .gjs-sm-sector .gjs-sm-title { background-color: #f8fafc !important; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; color: #1e293b !important; font-weight: bold; padding: 12px 15px !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
         .gjs-sm-properties { padding: 15px !important; }
@@ -99,7 +109,7 @@ export default createRoute(async (c) => {
 
     <header>
         <div class="flex items-center gap-3 overflow-hidden w-full max-w-[350px]">
-            <a href="/admin" class="text-gray-500 hover:text-indigo-600 transition p-2 bg-gray-100 hover:bg-indigo-50 rounded-lg shrink-0" title="Kembali ke Dashboard">
+            <a href="/admin/pages" class="text-gray-500 hover:text-indigo-600 transition p-2 bg-gray-100 hover:bg-indigo-50 rounded-lg shrink-0" title="Kembali ke Dashboard">
                 <i class="ph ph-arrow-left text-xl"></i>
             </a>
             <div class="flex-1 min-w-0 pr-3">
@@ -123,7 +133,7 @@ export default createRoute(async (c) => {
             </button>
             <button @click="savePage" :disabled="loading" class="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700 hover:shadow-lg transition disabled:opacity-70">
                 <i class="ph" :class="loading ? 'ph-spinner animate-spin' : 'ph-floppy-disk'"></i>
-                <span x-text="loading ? 'MENYIMPAN...' : 'SIMPAN BERANDA'"></span>
+                <span x-text="loading ? 'MENYIMPAN...' : 'UPDATE'"></span>
             </button>
             <button @click="toggleMobileMenu" class="md:hidden p-2 rounded-lg border border-gray-300 transition" :class="mobileMenuOpen ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-gray-700'">
                 <i class="ph" :class="mobileMenuOpen ? 'ph-x' : 'ph-list'" style="font-size: 24px;"></i>
@@ -193,6 +203,8 @@ export default createRoute(async (c) => {
                 <div x-show="settingsTab === 'commerce'" class="space-y-5 animate-fade-in">
                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Judul Halaman (Internal)</label><input x-model="page.title" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div>
                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Slug</label><div class="flex"><span class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-100 text-gray-500 text-xs">/</span><input x-model="page.slug" class="w-full px-4 py-2.5 bg-gray-50 border rounded-r-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-indigo-600"></div></div>
+                    <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Harga Produk (IDR)</label><input type="number" x-model="page.config.price" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"><p class="text-[10px] text-gray-400 mt-1">Kosongkan atau isi 0 jika tidak ada pembayaran.</p></div>
+                    <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200"><div class="flex items-center justify-between mb-2"><label class="text-xs font-bold text-yellow-800 uppercase">Order Bump</label><input type="checkbox" x-model="page.config.order_bump.active" class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"></div><div x-show="page.config.order_bump.active" class="space-y-3 mt-3 border-t border-yellow-200 pt-3"><input x-model="page.config.order_bump.title" placeholder="Judul Penawaran Tambahan" class="w-full px-3 py-2 bg-white border border-yellow-300 rounded text-sm outline-none"><input type="number" x-model="page.config.order_bump.price" placeholder="Harga Tambahan" class="w-full px-3 py-2 bg-white border border-yellow-300 rounded text-sm outline-none"><textarea x-model="page.config.order_bump.desc" placeholder="Deskripsi singkat..." class="w-full px-3 py-2 bg-white border border-yellow-300 rounded text-sm outline-none resize-none h-16"></textarea></div></div>
                 </div>
                 <div x-show="settingsTab === 'seo'" class="space-y-5 animate-fade-in">
                      <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Meta Title</label><input x-model="page.config.settings.seo_title" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div>
@@ -262,33 +274,31 @@ export default createRoute(async (c) => {
         function debounce(func, timeout = 300){ let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => { func.apply(this, args); }, timeout); }; }
     })();
 
-    // 🔥 PERBAIKAN FATAL PADA LOGIKA KATEGORI (ANTI CRASH)
     function getElementorIcon(category, id) {
-        const c = (category || 'Custom').toLowerCase();
-        const i = (id || '').toLowerCase();
-        if(c.includes('header') || i.includes('hero')) return 'ph:layout-duotone';
-        if(c.includes('feature')) return 'ph:squares-four-duotone';
-        if(c.includes('commerce') || i.includes('price')) return 'ph:tag-duotone';
-        if(i.includes('contact')) return 'ph:envelope-simple-duotone';
-        if(i.includes('container') || i.includes('col')) return 'ph:columns-duotone';
-        if(i.includes('text')) return 'ph:text-t-duotone';
-        if(i.includes('image')) return 'ph:image-duotone';
-        if(i.includes('button')) return 'ph:mouse-left-click-duotone';
-        if(i.includes('faq') || i.includes('accordion')) return 'ph:list-dashes-duotone';
-        if(i.includes('countdown')) return 'ph:timer-duotone';
+        if(category.toLowerCase().includes('header') || id.includes('hero')) return 'ph:layout-duotone';
+        if(category.toLowerCase().includes('feature')) return 'ph:squares-four-duotone';
+        if(category.toLowerCase().includes('commerce') || id.includes('price')) return 'ph:tag-duotone';
+        if(id.includes('contact')) return 'ph:envelope-simple-duotone';
+        if(id.includes('container') || id.includes('col')) return 'ph:columns-duotone';
+        if(id.includes('text')) return 'ph:text-t-duotone';
+        if(id.includes('image')) return 'ph:image-duotone';
+        if(id.includes('button')) return 'ph:mouse-left-click-duotone';
+        if(id.includes('faq') || id.includes('accordion')) return 'ph:list-dashes-duotone';
+        if(id.includes('countdown')) return 'ph:timer-duotone';
         return 'ph:cube-duotone';
     }
 
     function editorApp() {
         return {
             device: 'desktop', tab: 'blocks', settingsTab: 'commerce', mobileMenuOpen: false, showSettings: false, loading: false, notifications: [],
-            page: { id: 0, slug: 'homepage', title: 'Beranda', product_type: 'physical', config: { price: 0, order_bump: { active: false, title: '', price: 0, desc: '' }, settings: { seo_title: '', seo_desc: '', favicon: '', custom_head: '', custom_body: '' } } },
+            page: { id: 0, slug: '', title: '', product_type: 'physical', config: { price: 0, order_bump: { active: false, title: '', price: 0, desc: '' }, settings: { seo_title: '', seo_desc: '', favicon: '', custom_head: '', custom_body: '' } } },
 
             async init() {
                 try {
                     this.initGrapes();
                     await this.loadWidgets();
-                    await this.loadPageData('homepage');
+                    const slug = new URLSearchParams(window.location.search).get('slug');
+                    if (slug) await this.loadPageData(slug);
                 } catch (e) { console.error("Fatal Init Error:", e); this.notify('System Error', 'Gagal memuat editor. Cek console.', 'error'); }
             },
 
@@ -302,78 +312,45 @@ export default createRoute(async (c) => {
                 try {
                     const res = await fetch('/api/admin/v1/widgets');
                     if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
-                    
-                    const responseData = await res.json();
-                    
-                    // Antisipasi perbedaan format (jika API dikembalikan sebagai array murni atau object beranak)
-                    const widgets = Array.isArray(responseData) ? responseData : (responseData.data || responseData.results || []);
-                    
-                    if (!Array.isArray(widgets) || widgets.length === 0) {
-                        return this.notify('Info', 'Belum ada widget di database.', 'success');
-                    }
+                    const widgets = await res.json();
                     
                     widgets.forEach(w => {
-                        try {
-                            appBuilderCache[w.id] = w;
-                            let dbConfig = safeJSONParse(w.attributes);
+                        appBuilderCache[w.id] = w;
+                        let dbConfig = safeJSONParse(w.attributes);
 
-                            let compDefaults = {
-                                ...dbConfig,
-                                tagName: dbConfig.tagName || 'div',
-                                attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
-                                traits: dbConfig.traits || [],
-                                // 🔥 PERBAIKAN FATAL: Membuka paksa gembok GrapesJS agar widget kustom bisa diedit teksnya!
-                                droppable: true,
-                                editable: true,
-                                hoverable: true,
-                                selectable: true
-                            };
+                        let compDefaults = {
+                            ...dbConfig,
+                            tagName: dbConfig.tagName || 'div',
+                            attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
+                            traits: dbConfig.traits || []
+                        };
 
-                            // 🔥 PERBAIKAN FATAL: Mencegah Syntax Error Javascript merusak seluruh editor
-                            let scriptFn = undefined;
-                            if (w.script && w.script.trim() !== '') {
-                                try {
-                                    scriptFn = new Function(w.script);
-                                } catch (errScript) {
-                                    console.warn(\`Script error pada widget \${w.id}. Abaikan script ini.\`, errScript);
+                        domc.addType(w.id, {
+                            isComponent: el => {
+                                if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
+                                    return { type: w.id };
                                 }
+                            },
+                            model: { 
+                                defaults: compDefaults,
+                                script: w.script ? new Function(w.script) : undefined
                             }
-
-                            domc.addType(w.id, {
-                                isComponent: el => {
-                                    if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
-                                        return { type: w.id };
-                                    }
-                                },
-                                model: { 
-                                    defaults: compDefaults,
-                                    script: scriptFn
-                                }
-                            });
-                            
-                            // Amankan Kategori yang kosong agar toLowerCase() tidak meledak
-                            const safeCategory = w.category || 'Custom';
-                            
-                            if (safeCategory !== 'System') { 
-                                if (!bm.get(w.id)) { 
-                                    bm.add(w.id, { 
-                                        label: \`
-                                            <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(safeCategory, w.id)}"></iconify-icon></div>
-                                            <div class="gjs-block-label">\${w.label || w.id}</div>
-                                        \`, 
-                                        category: safeCategory, 
-                                        content: w.content 
-                                    }); 
-                                }
+                        });
+                        
+                        if (w.category !== 'System') { 
+                            if (!bm.get(w.id)) { 
+                                bm.add(w.id, { 
+                                    label: \`
+                                        <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(w.category, w.id)}"></iconify-icon></div>
+                                        <div class="gjs-block-label">\${w.label}</div>
+                                    \`, 
+                                    category: w.category, 
+                                    content: w.content 
+                                }); 
                             }
-                        } catch(errItem) {
-                            console.error("Gagal meload widget individual:", w.id, errItem);
                         }
                     });
-                } catch (e) { 
-                    console.error("Widget Load Failed:", e); 
-                    this.notify('Warning', 'Gagal memuat widget library. Cek Console!', 'error'); 
-                }
+                } catch (e) { console.error("Widget Load Failed:", e); this.notify('Warning', 'Gagal memuat widget library.', 'error'); }
             },
 
             async loadPageData(slug) {
@@ -382,10 +359,17 @@ export default createRoute(async (c) => {
                     const res = await fetch(\`/api/admin/v1/builder/pages/\${slug}\`);
                     if (!res.ok) throw new Error("Gagal mengambil data halaman");
                     const data = await res.json();
-                    
-                    if(data.slug) this.page.slug = data.slug; 
-                    if(data.title) this.page.title = data.title;
+                    this.page.id = data.id; 
+                    this.page.slug = data.slug; 
+                    this.page.title = data.title || '';
+                    this.page.product_type = data.product_type || 'physical';
 
+                    if (data.product_config_json) { 
+                        const conf = typeof data.product_config_json === 'string' ? safeJSONParse(data.product_config_json) : data.product_config_json; 
+                        this.page.config.price = conf.price || 0;
+                        if(conf.order_bump) this.page.config.order_bump = { ...this.page.config.order_bump, ...conf.order_bump };
+                        if(conf.settings) this.page.config.settings = { ...this.page.config.settings, ...conf.settings };
+                    }
                     if (window.editor) {
                         window.editor.setComponents(data.html_content || '<div></div>'); 
                         window.editor.setStyle(data.css_content || '');
@@ -408,7 +392,7 @@ export default createRoute(async (c) => {
                     tempDiv.querySelectorAll('details').forEach(el => el.removeAttribute('open'));
                     html = tempDiv.innerHTML;
 
-                    const payload = { slug: this.page.slug, title: this.page.title, html: html, css: css };
+                    const payload = { id: this.page.id, slug: this.page.slug, title: this.page.title, html: html, css: css, product_config: this.page.config, product_type: this.page.product_type };
                     const res = await fetch('/api/admin/v1/builder/pages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
                     if(res.ok) { this.notify('Sukses', 'Halaman berhasil disimpan!'); } else { const err = await res.json(); throw new Error(err.message || 'Save failed'); }
                 } catch (e) { this.notify('Gagal', e.message, 'error'); }
@@ -418,6 +402,7 @@ export default createRoute(async (c) => {
             initGrapes() {
                 window.editor = grapesjs.init({
                     container: '#gjs', height: '100%', width: 'auto', storageManager: false, showOffsets: 1, noticeOnUnload: 0, panels: { defaults: [] }, 
+                    // INI KUNCINYA: Mengizinkan skrip yang tertanam di halaman (seperti pada page test Anda) untuk tereksekusi di dalam kanvas
                     allowScripts: 1, 
                     assetManager: { 
                         uploadText: 'Drop gambar di sini', autoAdd: 1,
@@ -495,13 +480,6 @@ export default createRoute(async (c) => {
 
                 const domc = window.editor.DomComponents; const cmds = window.editor.Commands; const tm = window.editor.TraitManager; const bm = window.editor.BlockManager;
 
-                // Tambahkan perintah kustom untuk Toolbar
-                cmds.add('select-parent', {
-                    run(editor) {
-                        editor.runCommand('core:component-exit');
-                    }
-                });
-
                 tm.addType('file-upload', {
                     createInput({ trait }) {
                         const div = document.createElement('div'); 
@@ -512,6 +490,7 @@ export default createRoute(async (c) => {
 
                         const currentValue = trait.getValue();
 
+                        // 1. KOTAK PREVIEW GAMBAR
                         const previewWrapper = document.createElement('div');
                         previewWrapper.style.width = '100%';
                         previewWrapper.style.height = '120px';
@@ -528,23 +507,27 @@ export default createRoute(async (c) => {
                         previewImg.src = currentValue || '';
                         previewWrapper.appendChild(previewImg);
 
+                        // 2. INPUT FILE (Sembunyi)
                         const input = document.createElement('input'); 
                         input.type = 'file'; 
                         input.accept = 'image/*'; 
                         input.style.display = 'none';
                         
+                        // 3. TOMBOL UPLOAD / GANTI
                         const btn = document.createElement('button'); 
                         btn.className = 'trait-custom-btn'; 
                         btn.innerHTML = (currentValue && currentValue.trim() !== '') 
                             ? '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR' 
                             : '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
 
+                        // 4. TOMBOL HAPUS (MERAH)
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'trait-custom-btn';
                         removeBtn.style.backgroundColor = '#ef4444';
                         removeBtn.innerHTML = '<i class="ph ph-trash"></i> KOSONGKAN SLOT';
                         removeBtn.style.display = (currentValue && currentValue.trim() !== '') ? 'flex' : 'none';
 
+                        // AKSI KETIKA TOMBOL UPLOAD DIKLIK
                         btn.onclick = () => input.click();
                         input.onchange = () => {
                             const file = input.files[0]; if(!file) return;
@@ -563,9 +546,11 @@ export default createRoute(async (c) => {
                                     const json = await res.json();
                                     const url = json.data ? json.data[0].src : (json.url || json.secure_url);
                                     if(url) { 
+                                        // Masukkan URL ke GrapesJS
                                         trait.setValue(url); 
                                         trait.target.addAttributes({ [trait.get('name')]: url }); 
                                         
+                                        // Update Tampilan (Munculkan Preview & Tombol Hapus)
                                         previewImg.src = url;
                                         previewWrapper.style.display = 'block';
                                         btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR';
@@ -587,11 +572,14 @@ export default createRoute(async (c) => {
                             };
                         };
 
+                        // AKSI KETIKA TOMBOL HAPUS DIKLIK
                         removeBtn.onclick = () => {
+                            // Kosongkan value dari memori GrapesJS
                             trait.setValue(''); 
                             trait.target.addAttributes({ [trait.get('name')]: '' });
                             if(trait.target.get('tagName') === 'img') trait.target.set('src', '');
                             
+                            // Hilangkan Preview dan sembunyikan tombol Hapus
                             previewImg.src = '';
                             previewWrapper.style.display = 'none';
                             btn.innerHTML = '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
@@ -606,6 +594,7 @@ export default createRoute(async (c) => {
                         return div;
                     },
                     
+                    // MENJAGA SINKRONISASI SAAT PINDAH-PINDAH WIDGET
                     onUpdate({ elInput, trait }) {
                         const currentValue = trait.getValue();
                         const previewWrapper = elInput.children[0];
@@ -643,17 +632,14 @@ export default createRoute(async (c) => {
 
                 window.editor.on('component:selected', () => { this.mobileMenuOpen = false; });
                 window.editor.on('block:drag:stop', () => { this.mobileMenuOpen = false; });
-                
-                // 🔥 PERBAIKAN 2: Penambahan 'pointer-events: none;' pada ikon agar klik Hapus (Delete) tembus ke GrapesJS
                 window.editor.on('component:selected', (c) => { 
                     const currentToolbar = c.get('toolbar') || [];
-                    if(currentToolbar.some(i => i.command === 'tlb-move' && i.label.includes('pointer-events: none'))) return;
-                    
+                    if(currentToolbar.some(i => i.command === 'tlb-move')) return;
                     c.set('toolbar', [
-                        { attributes: { title: 'Geser' }, command: 'tlb-move', label: '<i class="ph ph-arrows-out-cardinal" style="pointer-events: none; font-size: 16px;"></i>' },
-                        { attributes: { title: 'Pilih Parent' }, command: 'select-parent', label: '<i class="ph ph-arrow-fat-up" style="pointer-events: none; font-size: 16px;"></i>' },
-                        { attributes: { title: 'Duplikat' }, command: 'tlb-clone', label: '<i class="ph ph-copy" style="pointer-events: none; font-size: 16px;"></i>' },
-                        { attributes: { title: 'Hapus' }, command: 'tlb-delete', label: '<i class="ph ph-trash text-red-400" style="pointer-events: none; font-size: 16px;"></i>' }
+                        { attributes: { class: 'fa fa-arrows', title: 'Geser' }, command: 'tlb-move', label: '<i class="ph ph-arrows-out-cardinal"></i>' },
+                        { attributes: { class: 'fa fa-arrow-up', title: 'Parent' }, command: (e) => e.runCommand('core:component-exit'), label: '<i class="ph ph-arrow-fat-up"></i>' },
+                        { attributes: { class: 'fa fa-clone', title: 'Duplicate' }, command: 'tlb-clone', label: '<i class="ph ph-copy"></i>' },
+                        { attributes: { class: 'fa fa-trash', title: 'Delete' }, command: 'tlb-delete', label: '<i class="ph ph-trash text-red-400"></i>' }
                     ]);
                 });
             }
