@@ -1,12 +1,33 @@
-import { createRoute } from 'honox/factory'
+import { Hono } from 'hono'
 
-export const GET = createRoute(async (c) => {
+const app = new Hono()
+
+// =======================================================
+// 1. ENDPOINT PUBLIK: ROOT API
+// =======================================================
+app.get('/', (c) => {
+  return c.json({
+    status: 'success',
+    message: 'Welcome to Public API v1',
+    endpoints: {
+      produk: '/api/public/v1/produk',
+      kategori: '/api/public/v1/kategori/:id',
+      checkout: '/api/public/v1/checkout',
+      track: '/api/public/v1/track'
+    }
+  })
+})
+
+// =======================================================
+// 2. ENDPOINT: DETAIL KATEGORI (Murni JSON API)
+// =======================================================
+app.get('/kategori/:id', async (c) => {
   try {
     const id = c.req.param('id')
     const strId = String(id)
     const intId = Number(id)
 
-    // 1. Ambil Kategori Induk (Tanpa chaining berisiko)
+    // 1. Ambil Kategori Induk
     let category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(strId).first()
     if (!category) {
       category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(intId).first()
@@ -25,14 +46,12 @@ export const GET = createRoute(async (c) => {
       subCategories = subReqInt.results || []
     }
 
-    // 3. Ambil Produk (Hanya jika tidak ada sub-kategori)
+    // 3. Ambil Produk
     let products: any[] = []
     if (subCategories.length === 0) {
       const qStr = `SELECT p.*, pr.name as provider_name FROM products p JOIN providers pr ON p.provider_id = pr.id WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1 ORDER BY p.price ASC`
-      
       let prodReqStr = await c.env.DB.prepare(qStr).bind(strId).all()
       products = prodReqStr.results || []
-      
       if (products.length === 0) {
         let prodReqInt = await c.env.DB.prepare(qStr).bind(intId).all()
         products = prodReqInt.results || []
@@ -41,14 +60,204 @@ export const GET = createRoute(async (c) => {
 
     return c.json({
       success: true,
-      data: {
-        category,
-        sub_categories: subCategories,
-        products
-      }
+      data: { category, sub_categories: subCategories, products }
     }, 200)
 
   } catch (error: any) {
     return c.json({ success: false, message: error.message }, 500)
   }
 })
+
+// =======================================================
+// 3. ENDPOINT PUBLIK: DAFTAR PRODUK (Katalog Publik)
+// =======================================================
+app.get('/produk', async (c) => {
+  try {
+    const search = c.req.query('search')
+    const category = c.req.query('kategori')
+
+    let query = `
+      SELECT 
+        p.id, 
+        p.name, 
+        p.description, 
+        p.price, 
+        p.order_type, 
+        p.is_open_amount, 
+        p.image_url,
+        c.name as category_name,
+        c.slug as category_slug
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.status = 'active' AND p.is_visible = 1
+    `
+    const bindParams: any[] = []
+
+    if (search) {
+      query += ` AND p.name LIKE ?`
+      bindParams.push(`%${search}%`)
+    }
+
+    if (category) {
+      query += ` AND c.slug = ?`
+      bindParams.push(category)
+    }
+
+    query += ` ORDER BY c.name ASC, p.price ASC`
+
+    const { results } = await c.env.DB.prepare(query).bind(...bindParams).all()
+
+    const formattedData = results.map((item: any) => ({
+      id_produk: item.id,
+      nama_produk: item.name,
+      kategori: {
+        nama: item.category_name || 'Umum',
+        slug: item.category_slug || 'umum'
+      },
+      deskripsi: item.description || '',
+      tipe_transaksi: item.order_type === 'inquiry' ? 'cek_tagihan' : (item.order_type === 'postpaid' ? 'bayar_tagihan' : 'topup_langsung'),
+      bebas_nominal: {
+        status: item.is_open_amount === 1,
+        keterangan: item.is_open_amount === 1 ? 'User input nominal sendiri' : 'Harga sudah tetap'
+      },
+      harga: {
+        nominal_angka: item.price,
+        format_rupiah: item.is_open_amount === 1 
+          ? `+ Rp ${item.price.toLocaleString('id-ID')} (Biaya Admin)` 
+          : `Rp ${item.price.toLocaleString('id-ID')}`
+      },
+      icon_url: item.image_url || null
+    }))
+
+    return c.json({
+      status: 'success',
+      code: 200,
+      message: 'Berhasil mengambil katalog produk',
+      meta: {
+        total_data: formattedData.length,
+        filter_pencarian: search || null,
+        filter_kategori: category || null
+      },
+      data: formattedData
+    }, 200)
+
+  } catch (error: any) {
+    return c.json({
+      status: 'error',
+      code: 500,
+      message: 'Gagal mengambil data produk dari server',
+      error_detail: error.message
+    }, 500)
+  }
+})
+
+// ====================================================================
+// 4. ENDPOINT: PUBLIC CHECKOUT (GUEST ORDER)
+// ====================================================================
+app.post('/checkout', async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const productId = Number(body.product_id);
+    const customerNumber = body.customer_number as string;
+    const guestEmail = (body.guest_email as string) || null;
+    const inputAmount = Number(body.amount) || 0; 
+    
+    if (!productId || !customerNumber) return c.json({ success: false, message: 'Data tidak lengkap' }, 400);
+
+    const product = await c.env.DB.prepare(`SELECT price, is_open_amount FROM products WHERE id = ? AND status = 'active'`).bind(productId).first();
+    if (!product) return c.json({ success: false, message: 'Produk tidak tersedia' }, 404);
+
+    let totalPrice = product.price as number;
+    if (product.is_open_amount === 1) {
+      if (inputAmount < 1000) return c.json({ success: false, message: 'Nominal minimal Rp 1.000' }, 400);
+      totalPrice = inputAmount + (product.price as number);
+    }
+
+    const gateway = await c.env.DB.prepare(`SELECT api_endpoint, api_key FROM payment_gateways WHERE status = 'active' LIMIT 1`).first();
+    if (!gateway) return c.json({ success: false, message: 'Payment Gateway belum siap' }, 500);
+
+    const orderId = `TRX-${globalThis.crypto.randomUUID().split('-')[0].toUpperCase()}`;
+    const idempotencyKey = globalThis.crypto.randomUUID();
+
+    await c.env.DB.prepare(`
+      INSERT INTO transactions (id, user_id, product_id, customer_number, guest_email, order_type, bill_amount, total_price, status, idempotency_key)
+      VALUES (?, 0, ?, ?, ?, 'prepaid', ?, ?, 'waiting_payment', ?)
+    `).bind(orderId, productId, customerNumber, guestEmail, inputAmount, totalPrice, idempotencyKey).run();
+
+    const hostUrl = new URL(c.req.url).origin;
+    let targetUrl = (gateway.api_endpoint as string).endsWith('/trx') ? gateway.api_endpoint : gateway.api_endpoint + '/trx';
+    
+    const qrisRes = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${gateway.api_key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: orderId, amount: totalPrice,
+        webhook_url: `${hostUrl}/api/webhook/qrispay`,
+      })
+    });
+
+    const qrisData = await qrisRes.json();
+    if (qrisData.raw_qris) {
+      return c.json({ success: true, order_id: orderId, raw_qris: qrisData.raw_qris, total_price: totalPrice });
+    } else {
+      return c.json({ success: false, message: 'Gagal men-generate QRIS' }, 500);
+    }
+  } catch (error: any) {
+    return c.json({ success: false, message: error.message }, 500);
+  }
+});
+
+// ====================================================================
+// 5. ENDPOINT: TRACK ORDER (AMAN DENGAN NO HP)
+// ====================================================================
+app.post('/track', async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const orderId = body.order_id as string;
+    const phone = body.phone as string;
+
+    const trx = await c.env.DB.prepare(`
+      SELECT t.status, t.customer_number, t.provider_response, t.total_price, t.created_at, p.name as product_name, c.slug as category_slug
+      FROM transactions t
+      JOIN products p ON t.product_id = p.id
+      JOIN categories c ON p.category_id = c.id
+      WHERE t.id = ? AND t.user_id = 0
+    `).bind(orderId).first();
+
+    if (!trx) return c.json({ success: false, message: 'Pesanan tidak ditemukan.' }, 404);
+
+    let isVoucher = String(trx.category_slug).includes('voucher');
+    let secureSn = null;
+
+    if (trx.status === 'success') {
+      const responseObj = JSON.parse(trx.provider_response as string || '{}');
+      const rawSn = responseObj.sn || responseObj.raw_text || 'SN belum didapatkan';
+
+      if (isVoucher) {
+        if (!phone || phone !== trx.customer_number) {
+           return c.json({ success: false, require_phone: true, message: 'Silakan masukkan Nomor HP yang benar untuk melihat Kode Voucher.' }, 401);
+        }
+        secureSn = rawSn;
+      } else {
+        secureSn = rawSn;
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        order_id: orderId,
+        product_name: trx.product_name,
+        customer_number: trx.customer_number,
+        status: trx.status,
+        total_price: trx.total_price,
+        sn: secureSn,
+        created_at: trx.created_at
+      }
+    });
+  } catch (error: any) {
+    return c.json({ success: false, message: error.message }, 500);
+  }
+});
+
+export default app
