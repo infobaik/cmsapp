@@ -2,6 +2,10 @@ import { Hono } from 'hono'
 import { getCookie } from 'hono/cookie'
 import { uploadToCloudinary } from '../../../services/cloudinary'
 
+// 🔥 1. IMPORT FILE ROUTER BUILDER & WIDGETS
+import builderApi from './builder'
+import widgetsApi from './widgets'
+
 const app = new Hono()
 
 app.use('/*', async (c, next) => {
@@ -21,6 +25,10 @@ app.use('/*', async (c, next) => {
   c.set('admin_user_id', user.id)
   return await next()
 })
+
+// 🔥 2. DAFTARKAN RUTENYA DI SINI AGAR BISA DIAKSES OLEH FRONTEND
+app.route('/builder', builderApi)
+app.route('/widgets', widgetsApi)
 
 app.post('/settings/update', async (c) => {
   const body = await c.req.parseBody()
@@ -256,9 +264,6 @@ app.post('/gateways/create', async (c) => {
 // ========================================================================
 // MESIN SYNC "KEBAL ERROR" DENGAN UPSERT (ANTI-UNIQUE CONSTRAINT)
 // ========================================================================
-// ========================================================================
-// MESIN SYNC "KEBAL ERROR" DENGAN UPSERT (ANTI-UNIQUE CONSTRAINT)
-// ========================================================================
 app.post('/products/sync-okeconnect', async (c) => {
   try {
     const body = await c.req.parseBody();
@@ -436,4 +441,5 @@ app.post('/gateways/:id/update', async (c) => {
     return c.redirect(`/admin/gateways/${id}?error=failed`)
   }
 })
+
 export default app
