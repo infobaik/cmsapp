@@ -1,10 +1,11 @@
 import { Hono } from 'hono'
 import { setCookie } from 'hono/cookie'
+import { sign } from 'hono/jwt' // 🔥 MANFAATKAN MODUL JWT BAWAAN HONO
 
 const app = new Hono()
 
 // =======================================================
-// 🛠️ FUNGSI BANTUAN: HASH PASSWORD SHA-256 (WEB CRYPTO API)
+// 🛠️ FUNGSI BANTUAN: HASH PASSWORD SHA-256 FOR DATABASE
 // =======================================================
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -15,7 +16,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 // =======================================================
-// 1. ENDPOINT AUTHENTICATION (LOGIN & REGISTER)
+// 1. ENDPOINT AUTHENTICATION (JWT HS256 SECURITY)
 // =======================================================
 app.post('/auth/login', async (c) => {
   try {
@@ -25,26 +26,36 @@ app.post('/auth/login', async (c) => {
 
     // Ambil data user dari database
     const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE email = ?`).bind(email).first()
-    
     if (!user) {
        return c.redirect('/login?error=Email+atau+password+salah')
     }
 
-    // 🔥 PENGESAHAN HASH: Tukar input password kepada SHA-256 sebelum bandingkan
+    // Cek kecocokan password hash
     const inputHash = await hashPassword(password)
-    
     if (user.password_hash !== inputHash) {
        return c.redirect('/login?error=Email+atau+password+salah')
     }
 
-    // Buat sesi baharu jika sah
-    const sessionId = crypto.randomUUID()
-    await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
+    // 🔥 GENERATE JWT TOKEN DENGAN ALGORITMA HS256 🔥
+    const jwtSecret = c.env.JWT_SECRET || 'super-secret-key-fallback-256-bit'
+    const payload = {
+      id: user.id,
+      role: user.role,
+      exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7) // Berlaku 7 Hari
+    }
+    
+    // Secara bawaan, fungsi sign Hono menggunakan algoritma HS256
+    const token = await sign(payload, jwtSecret)
 
-    // Tetapkan Cookie
-    setCookie(c, 'session_id', sessionId, { path: '/', httpOnly: true, secure: true, maxAge: 604800 })
+    // Simpan token JWT ke Cookie browser dengan aman
+    setCookie(c, 'token', token, { 
+      path: '/', 
+      httpOnly: true, 
+      secure: true, 
+      maxAge: 604800 // 7 hari dalam detik
+    })
 
-    // Hala tuju mengikut peranan (Role)
+    // Pengalihan halaman berdasarkan role
     if (user.role === 'admin') {
        return c.redirect('/admin')
     }
@@ -68,7 +79,6 @@ app.post('/auth/register', async (c) => {
       return c.redirect('/register?error=Email+sudah+terdaftar')
     }
 
-    // 🔥 HASH PASSWORD: Tukar password kepada SHA-256 sebelum disimpan ke DB
     const secureHash = await hashPassword(password)
 
     await c.env.DB.prepare(`INSERT INTO users (name, email, password_hash, phone, role) VALUES (?, ?, ?, ?, 'member')`)
@@ -106,6 +116,7 @@ app.get('/kategori/:id', async (c) => {
     const strId = String(id)
     const intId = Number(id)
 
+    // 1. Ambil Kategori Induk
     let category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(strId).first()
     if (!category) {
       category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(intId).first()
@@ -115,6 +126,7 @@ app.get('/kategori/:id', async (c) => {
       return c.json({ success: false, message: 'Kategori tidak ditemukan' }, 404)
     }
 
+    // 2. Ambil Sub-Kategori
     let subReqStr = await c.env.DB.prepare(`SELECT id, name, slug, image_url, cover_url FROM categories WHERE parent_id = ? ORDER BY name ASC`).bind(strId).all()
     let subCategories = subReqStr.results || []
     
@@ -123,6 +135,7 @@ app.get('/kategori/:id', async (c) => {
       subCategories = subReqInt.results || []
     }
 
+    // 3. Ambil Produk
     let products: any[] = []
     if (subCategories.length === 0) {
       const qStr = `SELECT p.*, pr.name as provider_name FROM products p JOIN providers pr ON p.provider_id = pr.id WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1 ORDER BY p.price ASC`
