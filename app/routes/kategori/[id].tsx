@@ -3,16 +3,16 @@ import { createRoute } from 'honox/factory'
 export default createRoute(async (c) => {
   const id = c.req.param('id')
   
-  // 1. CEK KATEGORI SAAT INI (Menggunakan SELECT * persis seperti Member Area)
+  // 1. CEK KATEGORI SAAT INI
   const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
   if (!category) return c.notFound()
 
-  // 2. AMBIL PENGATURAN UI GLOBAL
+  // 2. AMBIL PENGATURAN UI GLOBAL (Ditambah fallback array kosong agar tidak crash saat dilooping)
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
-  sysSettings.forEach((row: any) => { settings[row.key] = row.value })
+  ;(sysSettings || []).forEach((row: any) => { settings[row.key] = row.value })
 
-  // 3. CEK APAKAH ADA SUB-KATEGORI? (🔥 PERBAIKAN FATAL: Gunakan bind(id) string murni!)
+  // 3. CEK APAKAH ADA SUB-KATEGORI?
   const { results: subCategories } = await c.env.DB.prepare(`
     SELECT id, name, slug, image_url, cover_url 
     FROM categories 
@@ -20,9 +20,9 @@ export default createRoute(async (c) => {
     ORDER BY name ASC
   `).bind(id).all()
 
-  // 4. JIKA TIDAK ADA SUB-KATEGORI, BARU AMBIL PRODUKNYA (Kueri disamakan dengan Member Area)
+  // 4. JIKA TIDAK ADA SUB-KATEGORI, BARU AMBIL PRODUKNYA
   let products: any[] = []
-  if (subCategories.length === 0) {
+  if ((subCategories || []).length === 0) {
     const { results } = await c.env.DB.prepare(`
       SELECT p.*, pr.name as provider_name 
       FROM products p
@@ -30,11 +30,11 @@ export default createRoute(async (c) => {
       WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
       ORDER BY p.price ASC
     `).bind(id).all()
-    products = results
+    products = results || []
   }
 
-  // Pengecekan Kategori Voucher untuk Peringatan Keamanan
-  const categoryName = category.name as string
+  // 🔥 PERBAIKAN FATAL DISINI: Pengecekan Kategori Voucher yang AMAN
+  const categoryName = String(category.name || '')
   const isVoucher = categoryName.toLowerCase().includes('voucher')
 
   // Logika CSS UI Kategori
@@ -58,17 +58,17 @@ export default createRoute(async (c) => {
       {/* HEADER KATEGORI (BANNER) */}
       {/* ======================================================== */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
-         <img src={(category.cover_url as string) || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={category.name as string} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+         <img src={(category.cover_url as string) || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={categoryName} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name as string}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{categoryName}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base">
-             {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
+             {(subCategories || []).length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
          </div>
       </div>
 
-      {subCategories.length > 0 ? (
+      {(subCategories || []).length > 0 ? (
         /* ======================================================== */
         /* FASE 1: TAMPILKAN GRID SUB-KATEGORI (JIKA ADA)           */
         /* ======================================================== */
@@ -79,7 +79,6 @@ export default createRoute(async (c) => {
                 href={`/kategori/${cat.id}`} 
                 class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
-                {/* 🔥 PERBAIKAN VISUAL: Ditambah fallback cover agar card tidak hitam blank jika cover_url kosong! */}
                 {coverVis !== 'hidden' && (
                   <img src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={cat.name} class={coverClass} />
                 )}
@@ -146,9 +145,9 @@ export default createRoute(async (c) => {
                          <div class="border border-slate-200 rounded-xl p-4 text-center peer-checked:border-indigo-600 peer-checked:bg-indigo-50 hover:border-indigo-300 transition-all h-full flex flex-col justify-center min-h-[80px]">
                            <h3 class="font-bold text-slate-700 text-sm leading-tight">{p.name}</h3>
                            {p.is_open_amount === 1 ? (
-                             <p class="text-xs text-slate-500 mt-1">+ Rp {p.price.toLocaleString('id-ID')} (Admin)</p>
+                             <p class="text-xs text-slate-500 mt-1">+ Rp {Number(p.price || 0).toLocaleString('id-ID')} (Admin)</p>
                            ) : (
-                             <p class="text-sm font-bold text-indigo-600 mt-1">Rp {p.price.toLocaleString('id-ID')}</p>
+                             <p class="text-sm font-bold text-indigo-600 mt-1">Rp {Number(p.price || 0).toLocaleString('id-ID')}</p>
                            )}
                          </div>
                          <div class="absolute top-2 right-2 hidden peer-checked:block text-indigo-600 bg-white rounded-full">
