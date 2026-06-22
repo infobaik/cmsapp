@@ -4,7 +4,7 @@ import { setCookie } from 'hono/cookie'
 const app = new Hono()
 
 // =======================================================
-// 🛠️ FUNGSI PINTAR: PARSER REQUEST
+// 🛠️ FUNGSI PINTAR: PARSER REQUEST (ANTI-KOSONG / ANTI-JSON-ERROR)
 // =======================================================
 async function getRequestBody(c: any) {
   const contentType = c.req.header('content-type') || ''
@@ -15,7 +15,7 @@ async function getRequestBody(c: any) {
 }
 
 // =======================================================
-// 🛠️ FUNGSI BANTUAN: HASH PASSWORD (AMAN DENGAN JWT_SECRET)
+// 🛠️ FUNGSI BANTUAN: HASH PASSWORD DENGAN JWT_SECRET
 // =======================================================
 async function hashPassword(password: string, secret: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -32,39 +32,49 @@ async function hashPassword(password: string, secret: string): Promise<string> {
 app.post('/auth/login', async (c) => {
   try {
     const body = await getRequestBody(c)
-    const email = body.email as string
+    const rawEmail = body.email as string
     const password = body.password as string
 
-    if (!email || !password) {
+    if (!rawEmail || !password) {
       return c.redirect('/login?error=invalid_credentials')
     }
+    
+    // 🔥 PERBAIKAN 1: Pastikan email selalu huruf kecil tanpa spasi
+    const email = rawEmail.trim().toLowerCase()
 
-    // 1. Cek User
-    const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE email = ?`).bind(email).first()
+    // Cek User (Menggunakan LOWER agar kebal salah ketik huruf besar/kecil)
+    const user = await c.env.DB.prepare(`SELECT id, password_hash, role FROM users WHERE LOWER(email) = ?`).bind(email).first()
     if (!user) {
        return c.redirect('/login?error=invalid_credentials')
     }
 
-    // 2. Verifikasi Password dengan JWT_SECRET
+    // Hash inputan dengan JWT_SECRET
     const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
     const inputHash = await hashPassword(password, jwtSecret)
-    
-    if (user.password_hash !== inputHash) {
+
+    // 🔥 PERBAIKAN FATAL 2: TRIPLE CHECK PASSWORD (Agar akun lama tetap bisa login)
+    // 1. Cek format baru (Hash + JWT Secret)
+    // 2. Cek format lama (Hash Murni tanpa Secret yg barusan Anda buat)
+    // 3. Cek format jadul (Plain Text murni / tidak di-hash sama sekali)
+    const pureHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
+    const pureHash = Array.from(new Uint8Array(pureHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+    if (user.password_hash !== inputHash && user.password_hash !== pureHash && user.password_hash !== password) {
        return c.redirect('/login?error=invalid_credentials')
     }
 
-    // 3. Buat Session (Sesuai dengan _middleware.ts Anda yang ngecek ke DB)
+    // Buat Session ke Database (Sesuai dengan `_middleware.ts` Anda!)
     const sessionId = globalThis.crypto.randomUUID()
     await c.env.DB.prepare(`INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))`).bind(sessionId, user.id).run()
 
-    // 4. Set Cookie (Tanpa secure: true agar lancar dites di local)
+    // Set Cookie untuk Middleware
     setCookie(c, 'session_id', sessionId, { 
       path: '/', 
       httpOnly: true, 
       maxAge: 604800 
     })
 
-    // 5. Arahkan sesuai Role
+    // Arahkan sesuai Role
     if (user.role === 'admin') {
        return c.redirect('/admin')
     }
@@ -80,19 +90,22 @@ app.post('/auth/register', async (c) => {
   try {
     const body = await getRequestBody(c)
     const name = body.name as string
-    const email = body.email as string
+    const rawEmail = body.email as string
     const password = body.password as string
     
-    if (!name || !email || !password) {
+    if (!name || !rawEmail || !password) {
        return c.redirect('/register?error=Data+tidak+lengkap')
     }
 
-    const exist = await c.env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first()
+    // Auto-huruf kecil untuk email pendaftaran
+    const email = rawEmail.trim().toLowerCase()
+
+    const exist = await c.env.DB.prepare(`SELECT id FROM users WHERE LOWER(email) = ?`).bind(email).first()
     if (exist) {
       return c.redirect('/register?error=email_exists')
     }
 
-    // Enkripsi password menggunakan JWT_SECRET
+    // Gunakan JWT_SECRET saat menyimpan akun baru
     const jwtSecret = c.env.JWT_SECRET || 'secret-fallback-key'
     const secureHash = await hashPassword(password, jwtSecret)
 
