@@ -1,25 +1,41 @@
-export default async function (c: any) {
+import { createRoute } from 'honox/factory'
+
+export default createRoute(async (c) => {
   const id = c.req.param('id')
   
-  // 1. Tembak endpoint API yang ada di folder src/api/public/v1
-  const origin = new URL(c.req.url).origin
-  const res = await fetch(`${origin}/api/public/v1/kategori/${id}`)
-  const json = await res.json()
+  // 1. CEK KATEGORI LANGSUNG DARI DB (MENGHINDARI SELF-FETCHING API)
+  const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
+  if (!category) return c.notFound()
 
-  if (!json.success || !json.data) {
-    return c.notFound()
-  }
-
-  const { category, sub_categories: subCategories, products } = json.data
-
-  // 2. Ambil Pengaturan CSS UI dari D1
+  // 2. AMBIL PENGATURAN UI GLOBAL DARI DB
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
-  if (sysSettings) {
-    sysSettings.forEach((row: any) => { settings[row.key] = row.value })
+  ;(sysSettings || []).forEach((row: any) => { settings[row.key] = row.value })
+
+  // 3. AMBIL SUB KATEGORI
+  const { results: subCategories } = await c.env.DB.prepare(`
+    SELECT id, name, slug, image_url, cover_url 
+    FROM categories 
+    WHERE parent_id = ? 
+    ORDER BY name ASC
+  `).bind(id).all()
+
+  // 4. AMBIL PRODUK JIKA TIDAK ADA SUB
+  let products: any[] = []
+  if ((subCategories || []).length === 0) {
+    const { results } = await c.env.DB.prepare(`
+      SELECT p.*, pr.name as provider_name 
+      FROM products p
+      JOIN providers pr ON p.provider_id = pr.id
+      WHERE p.category_id = ? AND p.status = 'active' AND p.is_visible = 1
+      ORDER BY p.price ASC
+    `).bind(id).all()
+    products = results || []
   }
 
-  const isVoucher = String(category.name || '').toLowerCase().includes('voucher')
+  // 5. DEKLARASI VARIABEL VISUAL
+  const categoryName = String(category.name || '')
+  const isVoucher = categoryName.toLowerCase().includes('voucher')
 
   const coverVis = settings.ui_cat_cover_vis || 'all'
   const iconVis = settings.ui_cat_icon_vis || 'all'
@@ -34,27 +50,27 @@ export default async function (c: any) {
   const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
   const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
-  // 3. Render HTML
+  // 6. RENDER HTML KE BROWSER
   return c.render(
     <div class="max-w-5xl mx-auto space-y-6 pb-12">
       
-      {/* HEADER KATEGORI (Fix Aspect Ratio dengan min-h) */}
+      {/* HEADER KATEGORI */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 min-h-[140px] md:min-h-[200px] shadow-xl mt-4">
-         {category.cover_url ? (
-           <img src={category.cover_url} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+         {category.cover_url && String(category.cover_url).startsWith('http') ? (
+           <img src={category.cover_url as string} alt={categoryName} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          ) : (
            <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-800 to-slate-900 opacity-80"></div>
          )}
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8 flex flex-col justify-end h-full">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white relative z-10">{category.name}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white relative z-10">{categoryName}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base relative z-10">
-             {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
+             {(subCategories || []).length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
          </div>
       </div>
 
-      {subCategories.length > 0 ? (
+      {(subCategories || []).length > 0 ? (
         <div class="px-2 mt-8">
           <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
             {subCategories.map((cat: any) => (
@@ -62,8 +78,9 @@ export default async function (c: any) {
                 href={`/kategori/${cat.id}`} 
                 class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 min-h-[160px] sm:min-h-[180px] md:min-h-[220px] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
+                {/* FILTER STARTSWITH HTTP AGAR GAMBAR TIDAK ERROR 404 */}
                 {coverVis !== 'hidden' && (
-                  cat.cover_url ? (
+                  cat.cover_url && String(cat.cover_url).startsWith('http') ? (
                     <img src={cat.cover_url} alt={cat.name} class={coverClass} />
                   ) : (
                     <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-900 to-slate-800"></div>
@@ -73,7 +90,7 @@ export default async function (c: any) {
                 <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
                   {iconVis !== 'hidden' && (
                       <div class={iconClass}>
-                        {cat.image_url ? (
+                        {cat.image_url && String(cat.image_url).startsWith('http') ? (
                           <img src={cat.image_url} alt={cat.name} class="w-full h-full object-contain drop-shadow-md" />
                         ) : (
                           <div class="w-full h-full bg-slate-500/50 rounded flex items-center justify-center">
@@ -132,9 +149,9 @@ export default async function (c: any) {
                           <div class="border border-slate-200 rounded-xl p-4 text-center peer-checked:border-indigo-600 peer-checked:bg-indigo-50 hover:border-indigo-300 transition-all h-full flex flex-col justify-center min-h-[80px]">
                             <h3 class="font-bold text-slate-700 text-sm leading-tight">{p.name}</h3>
                             {p.is_open_amount === 1 ? (
-                              <p class="text-xs text-slate-500 mt-1">+ Rp {p.price.toLocaleString('id-ID')} (Admin)</p>
+                              <p class="text-xs text-slate-500 mt-1">+ Rp {Number(p.price || 0).toLocaleString('id-ID')} (Admin)</p>
                             ) : (
-                              <p class="text-sm font-bold text-indigo-600 mt-1">Rp {p.price.toLocaleString('id-ID')}</p>
+                              <p class="text-sm font-bold text-indigo-600 mt-1">Rp {Number(p.price || 0).toLocaleString('id-ID')}</p>
                             )}
                           </div>
                           <div class="absolute top-2 right-2 hidden peer-checked:block text-indigo-600 bg-white rounded-full">
@@ -369,4 +386,4 @@ export default async function (c: any) {
       )}
     </div>
   )
-}
+})
