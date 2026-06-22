@@ -274,24 +274,27 @@ export default createRoute(async (c) => {
         function debounce(func, timeout = 300){ let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => { func.apply(this, args); }, timeout); }; }
     })();
 
+    // 🔥 PERBAIKAN 1: Cegah Error jika string kosong atau undefined
     function getElementorIcon(category, id) {
-        if(category.toLowerCase().includes('header') || id.includes('hero')) return 'ph:layout-duotone';
-        if(category.toLowerCase().includes('feature')) return 'ph:squares-four-duotone';
-        if(category.toLowerCase().includes('commerce') || id.includes('price')) return 'ph:tag-duotone';
-        if(id.includes('contact')) return 'ph:envelope-simple-duotone';
-        if(id.includes('container') || id.includes('col')) return 'ph:columns-duotone';
-        if(id.includes('text')) return 'ph:text-t-duotone';
-        if(id.includes('image')) return 'ph:image-duotone';
-        if(id.includes('button')) return 'ph:mouse-left-click-duotone';
-        if(id.includes('faq') || id.includes('accordion')) return 'ph:list-dashes-duotone';
-        if(id.includes('countdown')) return 'ph:timer-duotone';
+        const cat = (category || 'Custom').toLowerCase();
+        const ident = (String(id) || '').toLowerCase();
+        if(cat.includes('header') || ident.includes('hero')) return 'ph:layout-duotone';
+        if(cat.includes('feature')) return 'ph:squares-four-duotone';
+        if(cat.includes('commerce') || ident.includes('price')) return 'ph:tag-duotone';
+        if(ident.includes('contact')) return 'ph:envelope-simple-duotone';
+        if(ident.includes('container') || ident.includes('col')) return 'ph:columns-duotone';
+        if(ident.includes('text')) return 'ph:text-t-duotone';
+        if(ident.includes('image')) return 'ph:image-duotone';
+        if(ident.includes('button')) return 'ph:mouse-left-click-duotone';
+        if(ident.includes('faq') || ident.includes('accordion')) return 'ph:list-dashes-duotone';
+        if(ident.includes('countdown')) return 'ph:timer-duotone';
         return 'ph:cube-duotone';
     }
 
     function editorApp() {
         return {
             device: 'desktop', tab: 'blocks', settingsTab: 'commerce', mobileMenuOpen: false, showSettings: false, loading: false, notifications: [],
-            page: { id: 0, slug: '', title: '', product_type: 'physical', config: { price: 0, order_bump: { active: false, title: '', price: 0, desc: '' }, settings: { seo_title: '', seo_desc: '', favicon: '', custom_head: '', custom_body: '' } } },
+            page: { id: 0, slug: 'homepage', title: 'Beranda', product_type: 'physical', config: { price: 0, order_bump: { active: false, title: '', price: 0, desc: '' }, settings: { seo_title: '', seo_desc: '', favicon: '', custom_head: '', custom_body: '' } } },
 
             async init() {
                 try {
@@ -310,45 +313,75 @@ export default createRoute(async (c) => {
             async loadWidgets() {
                 const domc = window.editor.DomComponents; const bm = window.editor.BlockManager;
                 try {
-                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch('/api/admin/v1/widgets');
                     if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
-                    const widgets = await res.json();
+                    
+                    const responseData = await res.json();
+                    const widgets = Array.isArray(responseData) ? responseData : (responseData.data || responseData.results || []);
                     
                     widgets.forEach(w => {
-                        appBuilderCache[w.id] = w;
-                        let dbConfig = safeJSONParse(w.attributes);
+                        try {
+                            // 🔥 PERBAIKAN 2: Paksa ID menjadi String. GrapesJS akan Crash jika ID berupa Integer (Angka)
+                            const safeId = String(w.id);
+                            const safeCategory = w.category || 'Custom';
+                            const safeLabel = w.label || w.title || w.type || safeId;
+                            
+                            appBuilderCache[safeId] = w;
+                            
+                            // 🔥 PERBAIKAN 3: Jika kontennya berupa JSON (seperti "[{...}]"), bungkus dengan HTML agar GrapesJS tidak meledak
+                            let safeContent = w.content || '';
+                            if (typeof safeContent === 'string' && (safeContent.trim().startsWith('{') || safeContent.trim().startsWith('['))) {
+                                safeContent = \`<div class="p-4 bg-gray-100 text-gray-500 border border-dashed border-gray-300 text-xs text-center font-mono">
+                                    <b>[Legacy JSON Widget: \${w.type || 'Unknown'}]</b><br>
+                                    Widget ini berisi data JSON versi lama. Harap buat ulang struktur HTML-nya di panel Widget.
+                                </div>\`;
+                            }
 
-                        let compDefaults = {
-                            ...dbConfig,
-                            tagName: dbConfig.tagName || 'div',
-                            attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
-                            traits: dbConfig.traits || []
-                        };
+                            let dbConfig = safeJSONParse(w.attributes);
 
-                        domc.addType(w.id, {
-                            isComponent: el => {
-                                if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
-                                    return { type: w.id };
+                            let compDefaults = {
+                                ...dbConfig,
+                                tagName: dbConfig.tagName || 'div',
+                                attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': safeId },
+                                traits: dbConfig.traits || []
+                            };
+
+                            let scriptFn = undefined;
+                            if (w.script && w.script.trim() !== '') {
+                                try { scriptFn = new Function(w.script); } 
+                                catch (errScript) { console.warn(\`Script error pada widget \${safeId}\`); }
+                            }
+
+                            domc.addType(safeId, {
+                                isComponent: el => {
+                                    if (el.getAttribute && el.getAttribute('data-gjs-type') === safeId) {
+                                        return { type: safeId };
+                                    }
+                                },
+                                model: { 
+                                    defaults: compDefaults,
+                                    script: scriptFn
                                 }
-                            },
-                            model: { 
-                                defaults: compDefaults,
-                                script: w.script ? new Function(w.script) : undefined
+                            });
+                            
+                            if (safeCategory !== 'System') { 
+                                if (!bm.get(safeId)) { 
+                                    bm.add(safeId, { 
+                                        label: \`
+                                            <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(safeCategory, safeId)}"></iconify-icon></div>
+                                            <div class="gjs-block-label">\${safeLabel}</div>
+                                        \`, 
+                                        category: {
+                                            id: safeCategory,
+                                            label: safeCategory,
+                                            open: true
+                                        }, 
+                                        content: safeContent 
+                                    }); 
+                                }
                             }
-                        });
-                        
-                        if (w.category !== 'System') { 
-                            if (!bm.get(w.id)) { 
-                                bm.add(w.id, { 
-                                    label: \`
-                                        <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(w.category, w.id)}"></iconify-icon></div>
-                                        <div class="gjs-block-label">\${w.label}</div>
-                                    \`, 
-                                    category: w.category, 
-                                    content: w.content 
-                                }); 
-                            }
+                        } catch (errItem) {
+                            console.error("Gagal meload widget:", w.id, errItem);
                         }
                     });
                 } catch (e) { console.error("Widget Load Failed:", e); this.notify('Warning', 'Gagal memuat widget library.', 'error'); }
@@ -357,7 +390,6 @@ export default createRoute(async (c) => {
             async loadPageData(slug) {
                 this.loading = true;
                 try {
-                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch(\`/api/admin/v1/builder/pages/\${slug}\`);
                     if (!res.ok) throw new Error("Gagal mengambil data halaman");
                     const data = await res.json();
@@ -395,8 +427,6 @@ export default createRoute(async (c) => {
                     html = tempDiv.innerHTML;
 
                     const payload = { id: this.page.id, slug: this.page.slug, title: this.page.title, html: html, css: css, product_config: this.page.config, product_type: this.page.product_type };
-                    
-                    // PERBAIKAN: Mengarah ke Hono Backend
                     const res = await fetch('/api/admin/v1/builder/pages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
                     if(res.ok) { this.notify('Sukses', 'Halaman berhasil disimpan!'); } else { const err = await res.json(); throw new Error(err.message || 'Save failed'); }
                 } catch (e) { this.notify('Gagal', e.message, 'error'); }
@@ -416,7 +446,6 @@ export default createRoute(async (c) => {
                                 reader.onloadend = async () => {
                                     const fd = new FormData(); fd.append('file', reader.result); fd.append('filename', file.name);
                                     try {
-                                        // PERBAIKAN: Mengarah ke Hono Backend
                                         const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: fd }); const json = await res.json();
                                         let finalData = null; if (json.data && Array.isArray(json.data)) finalData = json.data[0]; else if (json.secure_url) finalData = { src: json.secure_url, width: json.width, height: json.height };
                                         if(finalData) window.editor.AssetManager.add(finalData); else alert('Gagal parse response Cloudinary');
@@ -541,7 +570,6 @@ export default createRoute(async (c) => {
                                 formData.append('filename', file.name);
                                 
                                 try {
-                                    // PERBAIKAN: Mengarah ke Hono Backend
                                     const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: formData }); 
                                     const json = await res.json();
                                     const url = json.data ? json.data[0].src : (json.url || json.secure_url);
