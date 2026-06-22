@@ -1,95 +1,635 @@
-// app/routes/admin/builder.tsx
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
-  return c.render(
-    <div class="h-screen w-full flex flex-col m-0 p-0 overflow-hidden">
-      {/* Script & Style GrapesJS */}
-      <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.21.2/dist/css/grapes.min.css" />
-      <script src="https://unpkg.com/grapesjs@0.21.2/dist/grapes.min.js"></script>
+  return c.html(`
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LandingBuilder Pro - Serverless Edition</title>
+    
+    <script>
+        (function() {
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+                if (args[0] && typeof args[0] === 'string' && (args[0].includes('cdn.tailwindcss.com') || args[0].includes('production'))) return;
+                originalWarn.apply(console, args);
+            };
+            window.onerror = function(msg, url, line) {
+                if(msg.includes('ResizeObserver')) return;
+                console.error("Global Error:", msg, "at", line);
+            };
+        })();
+    </script>
 
-      {/* Topbar Admin Builder */}
-      <div class="h-14 bg-slate-900 text-white flex items-center justify-between px-6 shrink-0 z-50">
-        <div class="font-bold">✨ BlinkSite Web Builder</div>
-        <div class="flex gap-3">
-          <a href="/admin/dashboard" class="px-4 py-1.5 bg-slate-700 rounded text-sm hover:bg-slate-600 transition">Kembali</a>
-          <button id="btn-save" class="px-6 py-1.5 bg-indigo-600 font-bold rounded text-sm hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30">
-            SIMPAN BERANDA
-          </button>
-        </div>
-      </div>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/drag-drop-touch@1.1.4/DragDropTouch.min.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.21.2/dist/css/grapes.min.css">
+    <script src="https://unpkg.com/grapesjs@0.21.2/dist/grapes.min.js"></script>
+    <script src="https://unpkg.com/grapesjs-navbar@1.0.1"></script>
+    <script src="https://unpkg.com/grapesjs-blocks-flexbox@0.1.1"></script>
+    <script src="https://unpkg.com/grapesjs-style-bg@2.0.1"></script>
 
-      {/* Area Kanvas GrapesJS */}
-      <div id="gjs" class="flex-1 w-full"></div>
+    <style>
+        /* TEMA ALA ELEMENTOR PROFESIONAL */
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: 'Inter', sans-serif; background: #e5e7eb; }
+        [x-cloak] { display: none !important; }
 
-      <script dangerouslySetInnerHTML={{ __html: `
-        async function initBuilder() {
-          const editor = grapesjs.init({
-            container: '#gjs',
-            height: '100%',
-            width: '100%',
-            storageManager: false, // Matikan localstorage bawaan
-            allowScripts: 1, // PENTING: Agar script widget tereksekusi
-            canvas: { styles: ['https://cdn.tailwindcss.com'] } // Inject Tailwind ke kanvas
-          });
+        /* Topbar Header */
+        header { height: 60px; width: 100%; position: fixed; top: 0; left: 0; z-index: 100; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 
-          // 1. Load Widget dari Database API
-          const res = await fetch('/api/admin/v1/builder/widgets');
-          const widgets = await res.json();
-          
-          widgets.forEach(w => {
-            // Daftarkan Komponen Logika
-            editor.DomComponents.addType(w.id, {
-               isComponent: el => el.getAttribute && el.getAttribute('data-gjs-type') === w.id,
-               model: {
-                 defaults: {
-                   tagName: 'div',
-                   attributes: { 'data-gjs-type': w.id },
-                   traits: w.attributes.traits || []
-                 },
-                 script: w.script ? new Function(w.script) : undefined
-               }
-            });
-
-            // Daftarkan Blok UI ke Panel Kanan
-            editor.BlockManager.add(w.id, {
-               label: w.label,
-               category: w.category,
-               content: w.content
-            });
-          });
-
-          // 2. Load Desain Beranda (Homepage) Saat Ini
-          const pageRes = await fetch('/api/admin/v1/builder/pages/homepage');
-          const pageData = await pageRes.json();
-          if (pageData.html_content) {
-             editor.setComponents(pageData.html_content);
-             editor.setStyle(pageData.css_content);
-          }
-
-          // 3. Aksi Simpan ke D1
-          document.getElementById('btn-save').addEventListener('click', async () => {
-             const btn = document.getElementById('btn-save');
-             btn.innerText = "Menyimpan...";
-             
-             await fetch('/api/admin/v1/builder/pages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                   slug: 'homepage', 
-                   html: editor.getHtml(), 
-                   css: editor.getCss() 
-                })
-             });
-             
-             btn.innerText = "SIMPAN BERANDA";
-             alert('Beranda berhasil diperbarui!');
-          });
-        }
+        .workspace { position: absolute; top: 60px; bottom: 0; left: 0; right: 0; background: #f1f5f9; display: flex; overflow: hidden; }
         
-        initBuilder();
-      `}} />
-    </div>,
-    { title: 'Page Builder' }
-  )
+        /* Panel Kiri Khas Elementor */
+        .sidebar-panel { position: relative; width: 320px; height: 100%; background: #ffffff; border-right: 1px solid #e2e8f0; z-index: 50; display: flex; flex-direction: column; flex-shrink: 0; box-shadow: 2px 0 10px rgba(0,0,0,0.02); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Area Canvas GrapesJS */
+        #gjs { position: relative !important; flex: 1; height: 100% !important; width: auto !important; min-width: 0; overflow: hidden; background-color: #f1f5f9; }
+
+        /* Mobile Adjustments */
+        .mobile-tools { display: none; height: 50px; width: 100%; position: fixed; top: 60px; left: 0; z-index: 90; background: #ffffff; border-bottom: 1px solid #e5e7eb; align-items: center; justify-content: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        @media (max-width: 768px) {
+            .mobile-tools { display: flex; }
+            .workspace { top: 110px; } 
+            .sidebar-panel { position: fixed; left: 0; top: 110px; bottom: 0; width: 85% !important; max-width: 320px; z-index: 9999 !important; transform: translateX(-100%); }
+            .sidebar-panel.open { transform: translateX(0); }
+            .mobile-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150; top: 110px; bottom: 0; display: none; backdrop-filter: blur(2px); }
+            .mobile-overlay.show { display: block; }
+        }
+
+        /* OVERRIDES GRAPESJS AGAR TERLIHAT SEPERTI ELEMENTOR */
+        .gjs-pn-views-container, .gjs-pn-panels, .gjs-pn-views, .gjs-pn-commands { display: none !important; width: 0 !important; }
+        .gjs-cv-canvas { width: 100% !important; height: 100% !important; top: 0 !important; left: 0 !important; }
+        
+        /* TAMPILAN BLOK WIDGET MODULAR (ELEMENTOR STYLE) */
+        .gjs-block-category { border-bottom: 1px solid #e2e8f0; }
+        .gjs-block-category .gjs-title { background-color: #f8fafc !important; color: #334155 !important; border-bottom: 1px solid #f1f5f9; font-weight: 700; font-size: 11px; padding: 12px 15px !important; text-transform: uppercase; letter-spacing: 0.5px; }
+        .gjs-block-category .gjs-blocks-c { background-color: #ffffff; display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 0 !important; padding: 10px !important; }
+        
+        .gjs-block { width: 100% !important; min-height: 80px !important; padding: 15px 5px !important; background: transparent; border: 1px solid transparent; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: grab; transition: all 0.2s ease; box-shadow: none; }
+        .gjs-block:hover { border-color: #cbd5e1; background: #f8fafc; }
+        .gjs-block:active { cursor: grabbing; }
+        .gjs-block-label { font-size: 10px !important; font-weight: 500; color: #475569; text-align: center; line-height: 1.2; }
+        .gjs-block-icon { font-size: 22px !important; color: #64748b; display: flex; align-items: center; justify-content: center; transition: color 0.2s; }
+        .gjs-block:hover .gjs-block-icon { color: #4f46e5; }
+        
+        /* Sidebar Styling */
+        .custom-scroll { overflow-y: auto; height: 100%; -webkit-overflow-scrolling: touch; }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        .gjs-selected { outline: 2px solid #4f46e5 !important; outline-offset: -2px; }
+        
+        /* Custom Trait Buttons & Inputs */
+        .trait-custom-btn { width: 100%; padding: 10px 12px; background-color: #4f46e5; color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .trait-custom-btn:hover { background-color: #4338ca; }
+        .trait-custom-btn:disabled { background-color: #9ca3af; cursor: not-allowed; }
+        
+        /* Floating Toolbar di dalam Canvas */
+        .gjs-toolbar { background-color: #1e293b !important; border-radius: 6px !important; border: 1px solid #334155 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; padding: 4px !important; gap: 4px !important; }
+        .gjs-toolbar-item { color: #f8fafc !important; width: 32px !important; height: 32px !important; border-radius: 4px; transition: background 0.2s; }
+        .gjs-toolbar-item:hover { background: #334155 !important; color: #60a5fa !important; }
+        
+        /* GrapesJS Form Inputs */
+        .gjs-field { background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; border-radius: 4px !important; color: #334155 !important; font-size: 12px !important; }
+        .gjs-sm-sector .gjs-sm-title { background-color: #f8fafc !important; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; color: #1e293b !important; font-weight: bold; padding: 12px 15px !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .gjs-sm-properties { padding: 15px !important; }
+        .gjs-trt-trait { margin-bottom: 12px !important; }
+        .gjs-label-wrp { color: #475569 !important; font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase; margin-bottom: 4px; }
+    </style>
+</head>
+
+<body x-data="editorApp()">
+
+    <header>
+        <div class="flex items-center gap-3 overflow-hidden w-full max-w-[350px]">
+            <a href="/admin" class="text-gray-500 hover:text-indigo-600 transition p-2 bg-gray-100 hover:bg-indigo-50 rounded-lg shrink-0" title="Kembali ke Dashboard">
+                <i class="ph ph-arrow-left text-xl"></i>
+            </a>
+            <div class="flex-1 min-w-0 pr-3">
+                <input x-model="page.title" class="bg-transparent font-bold text-base text-gray-800 outline-none w-full truncate placeholder-gray-400" placeholder="Nama Halaman">
+                <div class="flex items-center gap-1 mt-0.5">
+                    <i class="ph ph-link text-gray-400 text-xs"></i>
+                    <input x-model="page.slug" class="bg-transparent font-mono text-xs text-indigo-500 outline-none w-full truncate" placeholder="slug-halaman">
+                </div>
+            </div>
+        </div>
+
+        <div class="hidden md:flex absolute left-1/2 transform -translate-x-1/2 items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+            <button @click="setDevice('desktop')" :class="device=='desktop'?'bg-white shadow text-indigo-600':'text-gray-500 hover:text-gray-800'" class="p-1.5 px-4 rounded-md transition"><i class="ph ph-desktop text-xl"></i></button>
+            <button @click="setDevice('tablet')" :class="device=='tablet'?'bg-white shadow text-indigo-600':'text-gray-500 hover:text-gray-800'" class="p-1.5 px-4 rounded-md transition"><i class="ph ph-device-tablet text-xl"></i></button>
+            <button @click="setDevice('mobile')" :class="device=='mobile'?'bg-white shadow text-indigo-600':'text-gray-500 hover:text-gray-800'" class="p-1.5 px-4 rounded-md transition"><i class="ph ph-device-mobile text-xl"></i></button>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button @click="showSettings=true" class="hidden md:flex items-center gap-2 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-bold border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition">
+                <i class="ph ph-gear text-lg"></i> PENGATURAN
+            </button>
+            <button @click="savePage" :disabled="loading" class="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700 hover:shadow-lg transition disabled:opacity-70">
+                <i class="ph" :class="loading ? 'ph-spinner animate-spin' : 'ph-floppy-disk'"></i>
+                <span x-text="loading ? 'MENYIMPAN...' : 'SIMPAN BERANDA'"></span>
+            </button>
+            <button @click="toggleMobileMenu" class="md:hidden p-2 rounded-lg border border-gray-300 transition" :class="mobileMenuOpen ? 'bg-indigo-50 text-indigo-600' : 'bg-white text-gray-700'">
+                <i class="ph" :class="mobileMenuOpen ? 'ph-x' : 'ph-list'" style="font-size: 24px;"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="mobile-tools">
+        <button @click="setDevice('desktop')" :class="device=='desktop'?'text-indigo-600 bg-gray-100':'text-gray-500'" class="p-2 rounded-lg transition"><i class="ph ph-desktop text-xl"></i></button>
+        <button @click="setDevice('tablet')" :class="device=='tablet'?'text-indigo-600 bg-gray-100':'text-gray-500'" class="p-2 rounded-lg transition"><i class="ph ph-device-tablet text-xl"></i></button>
+        <button @click="setDevice('mobile')" :class="device=='mobile'?'text-indigo-600 bg-gray-100':'text-gray-500'" class="p-2 rounded-lg transition"><i class="ph ph-device-mobile text-xl"></i></button>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+        <button @click="cmd('core:undo')" class="text-gray-500 hover:text-gray-800 p-2"><i class="ph ph-arrow-u-up-left text-xl"></i></button>
+        <button @click="cmd('core:redo')" class="text-gray-500 hover:text-gray-800 p-2"><i class="ph ph-arrow-u-up-right text-xl"></i></button>
+        <div class="w-px h-6 bg-gray-300 mx-1"></div>
+        <button @click="showSettings=true" class="text-gray-500 hover:text-indigo-600 p-2"><i class="ph ph-gear text-xl"></i></button>
+    </div>
+
+    <div class="workspace">
+        <div class="mobile-overlay md:hidden" :class="mobileMenuOpen ? 'show' : ''" @click="mobileMenuOpen = false"></div>
+        <div class="sidebar-panel" :class="mobileMenuOpen ? 'open' : ''">
+            <div class="flex bg-[#1e293b] text-white shrink-0 shadow-md z-10">
+                <button @click="tab='blocks'" :class="tab=='blocks'?'bg-[#334155] text-white border-b-2 border-indigo-400':'text-gray-400 hover:bg-[#334155] hover:text-gray-200'" class="flex-1 py-3 transition flex flex-col items-center gap-1">
+                    <i class="ph ph-squares-four text-lg"></i><span class="text-[10px] font-bold tracking-wider">WIDGETS</span>
+                </button>
+                <button @click="tab='styles'" :class="tab=='styles'?'bg-[#334155] text-white border-b-2 border-indigo-400':'text-gray-400 hover:bg-[#334155] hover:text-gray-200'" class="flex-1 py-3 transition flex flex-col items-center gap-1">
+                    <i class="ph ph-paint-roller text-lg"></i><span class="text-[10px] font-bold tracking-wider">STYLE</span>
+                </button>
+                <button @click="tab='traits'" :class="tab=='traits'?'bg-[#334155] text-white border-b-2 border-indigo-400':'text-gray-400 hover:bg-[#334155] hover:text-gray-200'" class="flex-1 py-3 transition flex flex-col items-center gap-1">
+                    <i class="ph ph-gear-six text-lg"></i><span class="text-[10px] font-bold tracking-wider">SETTING</span>
+                </button>
+            </div>
+            
+            <div class="flex-1 bg-white custom-scroll relative w-full overflow-y-auto">
+                <div x-show="tab=='blocks'" class="h-full pb-20">
+                    <div id="blocks-container"></div>
+                </div>
+                <div x-show="tab=='styles'" class="h-full pb-20">
+                    <div id="selectors-container" class="p-3 bg-gray-50 border-b sticky top-0 z-10"></div>
+                    <div id="styles-container"></div>
+                </div>
+                <div x-show="tab=='traits'" class="h-full pb-20">
+                    <div class="p-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b bg-gray-50 sticky top-0 z-10 flex items-center gap-2">
+                        <i class="ph ph-sliders"></i> Atribut Widget
+                    </div>
+                    <div id="traits-container" class="p-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="gjs"></div>
+    </div>
+
+    <div x-show="showSettings" x-cloak class="fixed inset-0 z-[400] bg-slate-900/50 backdrop-blur-sm flex justify-end transition-opacity" @click.self="showSettings = false">
+        <div class="w-full md:w-[480px] h-full bg-white shadow-2xl flex flex-col border-l border-gray-200 transform transition-transform duration-300" 
+             x-transition:enter="translate-x-full" x-transition:enter-end="translate-x-0" x-transition:leave="translate-x-0" x-transition:leave-end="translate-x-full">
+            <div class="p-5 border-b flex justify-between items-center bg-gray-50">
+                <h2 class="font-bold text-gray-800 flex items-center gap-2 text-lg"><i class="ph ph-faders text-indigo-600"></i> Page Configuration</h2>
+                <button @click="showSettings = false" class="text-gray-400 hover:text-red-500"><i class="ph ph-x text-xl"></i></button>
+            </div>
+            <div class="flex border-b text-[11px] font-black uppercase bg-white sticky top-0 z-10">
+                <button @click="settingsTab='commerce'" :class="settingsTab==='commerce'?'border-b-2 border-indigo-600 text-indigo-600 bg-indigo-50':'text-gray-400'" class="flex-1 py-4 hover:bg-gray-50">Commerce</button>
+                <button @click="settingsTab='seo'" :class="settingsTab==='seo'?'border-b-2 border-indigo-600 text-indigo-600 bg-indigo-50':'text-gray-400'" class="flex-1 py-4 hover:bg-gray-50">SEO & Social</button>
+                <button @click="settingsTab='advanced'" :class="settingsTab==='advanced'?'border-b-2 border-indigo-600 text-indigo-600 bg-indigo-50':'text-gray-400'" class="flex-1 py-4 hover:bg-gray-50">Scripts</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                <div x-show="settingsTab === 'commerce'" class="space-y-5 animate-fade-in">
+                    <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Judul Halaman (Internal)</label><input x-model="page.title" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+                    <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Slug</label><div class="flex"><span class="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-100 text-gray-500 text-xs">/</span><input x-model="page.slug" class="w-full px-4 py-2.5 bg-gray-50 border rounded-r-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-indigo-600"></div></div>
+                </div>
+                <div x-show="settingsTab === 'seo'" class="space-y-5 animate-fade-in">
+                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Meta Title</label><input x-model="page.config.settings.seo_title" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Meta Description</label><textarea x-model="page.config.settings.seo_desc" class="w-full px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"></textarea></div>
+                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Favicon URL</label><div class="flex gap-2"><input x-model="page.config.settings.favicon" class="flex-1 px-4 py-2.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"><img :src="page.config.settings.favicon" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0iI2VlZSI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIi8+PC9zdmc+'" class="w-10 h-10 rounded border bg-gray-100 object-contain"></div></div>
+                </div>
+                <div x-show="settingsTab === 'advanced'" class="space-y-5 animate-fade-in">
+                    <div class="p-3 bg-blue-50 text-blue-700 text-xs rounded-lg border border-blue-100"><i class="ph ph-info"></i> Masukkan kode tracking (Pixel, GTM) di sini.</div>
+                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Custom Head Script</label><textarea x-model="page.config.settings.custom_head" class="w-full px-4 py-2.5 bg-gray-900 text-green-400 border rounded-lg font-mono text-xs outline-none h-40 resize-none"></textarea></div>
+                     <div><label class="block text-xs font-bold text-gray-500 uppercase mb-1">Custom Body Script</label><textarea x-model="page.config.settings.custom_body" class="w-full px-4 py-2.5 bg-gray-900 text-green-400 border rounded-lg font-mono text-xs outline-none h-40 resize-none"></textarea></div>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-gray-50 flex justify-end gap-3">
+                <button @click="showSettings=false" class="px-5 py-2.5 text-xs font-bold text-gray-600 hover:text-gray-900">BATAL</button>
+                <button @click="savePage(); showSettings=false" class="px-8 py-2.5 bg-indigo-600 text-white text-xs font-black rounded-lg shadow-lg hover:bg-indigo-700 transition">SIMPAN PERUBAHAN</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="iconify-picker-modal" class="fixed inset-0 hidden z-[99999] bg-black/60 flex items-start justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl w-full max-w-2xl shadow-2xl mt-10 overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="flex items-center justify-between p-4 border-b bg-gray-50">
+                <div class="flex-1 relative">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    <input id="iconify-picker-search" placeholder="Cari icon (contoh: arrow, user, star)..." class="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-lg outline-none focus:border-indigo-500 text-sm" />
+                </div>
+                <button id="iconify-picker-close" class="ml-4 p-2 text-gray-400 hover:text-red-500"><i class="ph ph-x text-xl"></i></button>
+            </div>
+            <div id="iconify-picker-results" class="p-4 grid grid-cols-6 sm:grid-cols-8 gap-2 overflow-y-auto custom-scroll bg-gray-50 min-h-[300px]"></div>
+            <div class="p-3 bg-white border-t text-xs text-center text-gray-400">Powered by <a href="https://iconify.design" target="_blank" class="text-indigo-500 hover:underline">Iconify</a></div>
+        </div>
+    </div>
+
+    <div class="fixed bottom-5 left-5 z-[100000] flex flex-col gap-2 pointer-events-none">
+        <template x-for="n in notifications" :key="n.id">
+            <div x-show="n.show" x-transition:enter="transform ease-out duration-300 transition" x-transition:enter-start="translate-y-2 opacity-0" x-transition:enter-end="translate-y-0 opacity-100" x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg shadow-xl border-l-4 bg-white min-w-[280px]" :class="n.type==='success'?'border-green-500':'border-red-500'">
+                <i class="ph text-2xl" :class="n.type==='success'?'ph-check-circle text-green-500':'ph-warning-circle text-red-500'"></i>
+                <div><h4 class="text-xs font-bold text-gray-800 uppercase" x-text="n.title"></h4><p class="text-[11px] text-gray-500 font-medium leading-tight" x-text="n.msg"></p></div>
+            </div>
+        </template>
+    </div>
+
+    <script>
+    let appBuilderCache = {};
+
+    function safeJSONParse(input) {
+        if (!input) return {};
+        if (typeof input === 'object') return input;
+        try { return JSON.parse(input); } 
+        catch (e) { return {}; }
+    }
+
+    (function(){
+        let activeModel = null; const modal = document.getElementById('iconify-picker-modal'); const input = document.getElementById('iconify-picker-search'); const results = document.getElementById('iconify-picker-results');
+        window.openIconifyPicker = function(model) { activeModel = model; modal.classList.remove('hidden'); input.value = ''; input.focus(); searchIcons('star'); };
+        document.getElementById('iconify-picker-close').onclick = () => modal.classList.add('hidden'); modal.onclick = (e) => { if(e.target === modal) modal.classList.add('hidden'); };
+        input.oninput = debounce((e) => searchIcons(e.target.value), 500);
+        async function searchIcons(q) { 
+            if(!q) return; results.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400"><i class="ph ph-spinner animate-spin text-2xl"></i><br>Mencari...</div>';
+            try { const res = await fetch(\`https://api.iconify.design/search?query=\${q}&limit=64\`); const data = await res.json(); results.innerHTML = ''; 
+                if(data.icons && data.icons.length > 0) { data.icons.forEach(icon => { const btn = document.createElement('button'); btn.className = 'p-2 hover:bg-white hover:shadow-md hover:ring-1 hover:ring-indigo-500 rounded-lg flex flex-col items-center gap-2 transition group'; btn.innerHTML = \`<iconify-icon icon="\${icon}" width="28" class="text-gray-600 group-hover:text-indigo-600"></iconify-icon><span class="text-[9px] text-gray-400 truncate w-full text-center group-hover:text-indigo-500">\${icon.split(':')[1]}</span>\`; btn.onclick = () => { 
+                    if(activeModel) { activeModel.addAttributes({ icon: icon }); } 
+                    modal.classList.add('hidden'); 
+                }; results.appendChild(btn); }); } else { results.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400">Tidak ditemukan.</div>'; }
+            } catch(e) { results.innerHTML = '<div class="col-span-full text-center py-10 text-red-400">Error fetch iconify.</div>'; } 
+        }
+        function debounce(func, timeout = 300){ let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => { func.apply(this, args); }, timeout); }; }
+    })();
+
+    function getElementorIcon(category, id) {
+        if(category.toLowerCase().includes('header') || id.includes('hero')) return 'ph:layout-duotone';
+        if(category.toLowerCase().includes('feature')) return 'ph:squares-four-duotone';
+        if(category.toLowerCase().includes('commerce') || id.includes('price')) return 'ph:tag-duotone';
+        if(id.includes('contact')) return 'ph:envelope-simple-duotone';
+        if(id.includes('container') || id.includes('col')) return 'ph:columns-duotone';
+        if(id.includes('text')) return 'ph:text-t-duotone';
+        if(id.includes('image')) return 'ph:image-duotone';
+        if(id.includes('button')) return 'ph:mouse-left-click-duotone';
+        if(id.includes('faq') || id.includes('accordion')) return 'ph:list-dashes-duotone';
+        if(id.includes('countdown')) return 'ph:timer-duotone';
+        return 'ph:cube-duotone';
+    }
+
+    function editorApp() {
+        return {
+            device: 'desktop', tab: 'blocks', settingsTab: 'commerce', mobileMenuOpen: false, showSettings: false, loading: false, notifications: [],
+            page: { id: 0, slug: 'homepage', title: 'Beranda', product_type: 'physical', config: { price: 0, order_bump: { active: false, title: '', price: 0, desc: '' }, settings: { seo_title: '', seo_desc: '', favicon: '', custom_head: '', custom_body: '' } } },
+
+            async init() {
+                try {
+                    this.initGrapes();
+                    await this.loadWidgets();
+                    // Paksa load homepage secara default
+                    await this.loadPageData('homepage');
+                } catch (e) { console.error("Fatal Init Error:", e); this.notify('System Error', 'Gagal memuat editor. Cek console.', 'error'); }
+            },
+
+            notify(title, msg, type = 'success') { const id = Date.now(); this.notifications.push({ id, title, msg, type, show: true }); setTimeout(() => { this.notifications = this.notifications.filter(n => n.id !== id); }, 4000); },
+            setDevice(d) { this.device = d; if (window.editor) window.editor.setDevice(d); this.mobileMenuOpen = false; },
+            toggleMobileMenu() { this.mobileMenuOpen = !this.mobileMenuOpen; },
+            cmd(c) { window.editor.runCommand(c); },
+
+            async loadWidgets() {
+                const domc = window.editor.DomComponents; const bm = window.editor.BlockManager;
+                try {
+                    // MENGARAH KE BACKEND HONO KITA
+                    const res = await fetch('/api/admin/v1/widgets');
+                    if (!res.ok) throw new Error(\`API Widget Error: \${res.status}\`);
+                    const widgets = await res.json();
+                    
+                    widgets.forEach(w => {
+                        appBuilderCache[w.id] = w;
+                        let dbConfig = safeJSONParse(w.attributes);
+
+                        let compDefaults = {
+                            ...dbConfig,
+                            tagName: dbConfig.tagName || 'div',
+                            attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': w.id },
+                            traits: dbConfig.traits || []
+                        };
+
+                        domc.addType(w.id, {
+                            isComponent: el => {
+                                if (el.getAttribute && el.getAttribute('data-gjs-type') === w.id) {
+                                    return { type: w.id };
+                                }
+                            },
+                            model: { 
+                                defaults: compDefaults,
+                                script: w.script ? new Function(w.script) : undefined
+                            }
+                        });
+                        
+                        if (w.category !== 'System') { 
+                            if (!bm.get(w.id)) { 
+                                bm.add(w.id, { 
+                                    label: \`
+                                        <div class="gjs-block-icon"><iconify-icon icon="\${getElementorIcon(w.category, w.id)}"></iconify-icon></div>
+                                        <div class="gjs-block-label">\${w.label}</div>
+                                    \`, 
+                                    category: w.category, 
+                                    content: w.content 
+                                }); 
+                            }
+                        }
+                    });
+                } catch (e) { console.error("Widget Load Failed:", e); this.notify('Warning', 'Gagal memuat widget library.', 'error'); }
+            },
+
+            async loadPageData(slug) {
+                this.loading = true;
+                try {
+                    // MENGARAH KE BACKEND HONO KITA
+                    const res = await fetch(\`/api/admin/v1/builder/pages/\${slug}\`);
+                    if (!res.ok) throw new Error("Gagal mengambil data halaman");
+                    const data = await res.json();
+                    
+                    if(data.slug) this.page.slug = data.slug; 
+                    if(data.title) this.page.title = data.title;
+
+                    if (window.editor) {
+                        window.editor.setComponents(data.html_content || '<div></div>'); 
+                        window.editor.setStyle(data.css_content || '');
+                        setTimeout(() => { if (window.editor.getSelected()) window.editor.runCommand('core:component-exit'); }, 500);
+                    }
+                    this.notify('Ready', \`Halaman dimuat dengan aman.\`);
+                } catch (e) { this.notify('Error', e.message, 'error'); }
+                this.loading = false;
+            },
+
+            async savePage() {
+                if(!this.page.slug) return this.notify('Validasi', 'Slug halaman tidak boleh kosong', 'error');
+                this.loading = true;
+                try {
+                    let html = window.editor.getHtml(); 
+                    const css = window.editor.getCss(); 
+                    
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    tempDiv.querySelectorAll('details').forEach(el => el.removeAttribute('open'));
+                    html = tempDiv.innerHTML;
+
+                    const payload = { slug: this.page.slug, title: this.page.title, html: html, css: css };
+                    // MENGARAH KE BACKEND HONO KITA
+                    const res = await fetch('/api/admin/v1/builder/pages', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                    if(res.ok) { this.notify('Sukses', 'Halaman berhasil disimpan!'); } else { const err = await res.json(); throw new Error(err.message || 'Save failed'); }
+                } catch (e) { this.notify('Gagal', e.message, 'error'); }
+                this.loading = false;
+            },
+
+            initGrapes() {
+                window.editor = grapesjs.init({
+                    container: '#gjs', height: '100%', width: 'auto', storageManager: false, showOffsets: 1, noticeOnUnload: 0, panels: { defaults: [] }, 
+                    allowScripts: 1, 
+                    assetManager: { 
+                        uploadText: 'Drop gambar di sini', autoAdd: 1,
+                        uploadFile: async (e) => {
+                            const files = e.dataTransfer ? e.dataTransfer.files : e.target.files;
+                            for (let i = 0; i < files.length; i++) {
+                                const file = files[i]; const reader = new FileReader(); reader.readAsDataURL(file);
+                                reader.onloadend = async () => {
+                                    const fd = new FormData(); fd.append('file', reader.result); fd.append('filename', file.name);
+                                    try {
+                                        // PENTING: Anda perlu membuat endpoint ini di src/api/admin/v1/index.ts
+                                        const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: fd }); const json = await res.json();
+                                        let finalData = null; if (json.data && Array.isArray(json.data)) finalData = json.data[0]; else if (json.secure_url) finalData = { src: json.secure_url, width: json.width, height: json.height };
+                                        if(finalData) window.editor.AssetManager.add(finalData); else alert('Gagal parse response Cloudinary');
+                                    } catch(err) { console.error(err); alert('Upload Gagal: ' + err.message); }
+                                };
+                            }
+                        }
+                    },
+                    canvas: { 
+                        scripts: ['https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js', 'https://cdn.tailwindcss.com'], 
+                        styles: ['https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css'] 
+                    },
+                    plugins: ['grapesjs-navbar', 'grapesjs-blocks-flexbox', 'grapesjs-style-bg'],
+                    deviceManager: { devices: [ { id: 'desktop', width: '' }, { id: 'tablet', width: '768px' }, { id: 'mobile', width: '375px' } ] },
+                    blockManager: { appendTo: '#blocks-container' },
+                    styleManager: { appendTo: '#styles-container', sectors: [{name: 'Dimension', buildProps: ['width','height','padding','margin']},{name:'Typography', buildProps:['font-size','color','text-align']},{name:'Decorations', buildProps:['background-color','border-radius','border','box-shadow']}] },
+                    traitManager: { appendTo: '#traits-container' }, layerManager: { appendTo: '#layers-container' }, selectorManager: { appendTo: '#selectors-container' }
+                });
+
+                window.editor.on('load', () => {
+                    const bm = window.editor.BlockManager;
+                    const removeBlocks = ['video', 'map', 'table', 'countdown', 'table-cell', 'table-row', 'tbody', 'thead', 'tfoot'];
+                    removeBlocks.forEach(id => {
+                        if (bm.get(id)) bm.remove(id);
+                    });
+                });
+
+                window.editor.on('canvas:load', () => {
+                    const iframeDoc = window.editor.Canvas.getDocument();
+                    
+                    const existingConfig = iframeDoc.getElementById('tw-config');
+                    if(existingConfig) existingConfig.remove();
+
+                    const s = iframeDoc.createElement('script');
+                    s.id = 'tw-config';
+                    s.innerHTML = \`
+                        window.tailwind = window.tailwind || {};
+                        window.tailwind.config = { 
+                            darkMode: 'class', 
+                            theme: { 
+                                extend: { 
+                                    fontFamily: { sans: ['Inter', 'sans-serif'] }, 
+                                    colors: { theme: { 50:'#eef2ff', 600:'#4f46e5' } },
+                                    animation: { marquee: 'marquee 25s linear infinite' }, 
+                                    keyframes: { marquee: { '0%': { transform: 'translateX(0%)' }, '100%': { transform: 'translateX(-100%)' } } } 
+                                } 
+                            } 
+                        };
+                    \`;
+                    iframeDoc.head.insertBefore(s, iframeDoc.head.firstChild);
+
+                    if(!iframeDoc.getElementById('editor-base-style')) {
+                        const st = iframeDoc.createElement('style');
+                        st.id = 'editor-base-style';
+                        st.innerHTML = "body { font-family: 'Inter', sans-serif; overflow-x: hidden; min-height: 100vh; background-color: #ffffff; margin: 0; padding-top: 1px; } div:empty { min-height: 50px; outline: 1px dashed #ccc; }";
+                        iframeDoc.head.appendChild(st);
+                    }
+                });
+
+                window.editor.on('component:add', (model) => {
+                    if (model.get('tagName') === 'details') {
+                        model.addAttributes({ open: 'true' });
+                    }
+                });
+
+                const domc = window.editor.DomComponents; const cmds = window.editor.Commands; const tm = window.editor.TraitManager; const bm = window.editor.BlockManager;
+
+                tm.addType('file-upload', {
+                    createInput({ trait }) {
+                        const div = document.createElement('div'); 
+                        div.style.width = '100%';
+                        div.style.display = 'flex';
+                        div.style.flexDirection = 'column';
+                        div.style.gap = '8px';
+
+                        const currentValue = trait.getValue();
+
+                        const previewWrapper = document.createElement('div');
+                        previewWrapper.style.width = '100%';
+                        previewWrapper.style.height = '120px';
+                        previewWrapper.style.backgroundColor = '#f1f5f9';
+                        previewWrapper.style.border = '1px dashed #cbd5e1';
+                        previewWrapper.style.borderRadius = '6px';
+                        previewWrapper.style.overflow = 'hidden';
+                        previewWrapper.style.display = (currentValue && currentValue.trim() !== '') ? 'block' : 'none';
+
+                        const previewImg = document.createElement('img');
+                        previewImg.style.width = '100%';
+                        previewImg.style.height = '100%';
+                        previewImg.style.objectFit = 'contain'; 
+                        previewImg.src = currentValue || '';
+                        previewWrapper.appendChild(previewImg);
+
+                        const input = document.createElement('input'); 
+                        input.type = 'file'; 
+                        input.accept = 'image/*'; 
+                        input.style.display = 'none';
+                        
+                        const btn = document.createElement('button'); 
+                        btn.className = 'trait-custom-btn'; 
+                        btn.innerHTML = (currentValue && currentValue.trim() !== '') 
+                            ? '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR' 
+                            : '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
+
+                        const removeBtn = document.createElement('button');
+                        removeBtn.className = 'trait-custom-btn';
+                        removeBtn.style.backgroundColor = '#ef4444';
+                        removeBtn.innerHTML = '<i class="ph ph-trash"></i> KOSONGKAN SLOT';
+                        removeBtn.style.display = (currentValue && currentValue.trim() !== '') ? 'flex' : 'none';
+
+                        btn.onclick = () => input.click();
+                        input.onchange = () => {
+                            const file = input.files[0]; if(!file) return;
+                            const reader = new FileReader(); reader.readAsDataURL(file);
+                            reader.onloadend = async () => {
+                                const originalText = btn.innerHTML; 
+                                btn.innerHTML = 'UPLOADING...'; 
+                                btn.disabled = true; removeBtn.disabled = true;
+                                
+                                const formData = new FormData(); 
+                                formData.append('file', reader.result); 
+                                formData.append('filename', file.name);
+                                
+                                try {
+                                    const res = await fetch('/api/admin/v1/upload-image', { method: 'POST', body: formData }); 
+                                    const json = await res.json();
+                                    const url = json.data ? json.data[0].src : (json.url || json.secure_url);
+                                    if(url) { 
+                                        trait.setValue(url); 
+                                        trait.target.addAttributes({ [trait.get('name')]: url }); 
+                                        
+                                        previewImg.src = url;
+                                        previewWrapper.style.display = 'block';
+                                        btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR';
+                                        removeBtn.style.display = 'flex';
+
+                                        if(trait.target.get('tagName') === 'img') { 
+                                            trait.target.set('src', url); 
+                                        } 
+                                    } else { 
+                                        alert('Gagal mendapatkan URL gambar'); 
+                                    }
+                                } catch(err) { 
+                                    alert('Upload Gagal: ' + err.message); 
+                                } finally { 
+                                    if(btn.innerHTML === 'UPLOADING...') btn.innerHTML = originalText; 
+                                    btn.disabled = false; removeBtn.disabled = false;
+                                    input.value = ''; 
+                                }
+                            };
+                        };
+
+                        removeBtn.onclick = () => {
+                            trait.setValue(''); 
+                            trait.target.addAttributes({ [trait.get('name')]: '' });
+                            if(trait.target.get('tagName') === 'img') trait.target.set('src', '');
+                            
+                            previewImg.src = '';
+                            previewWrapper.style.display = 'none';
+                            btn.innerHTML = '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
+                            removeBtn.style.display = 'none';
+                        };
+
+                        div.appendChild(previewWrapper);
+                        div.appendChild(btn); 
+                        div.appendChild(input); 
+                        div.appendChild(removeBtn);
+                        
+                        return div;
+                    },
+                    
+                    onUpdate({ elInput, trait }) {
+                        const currentValue = trait.getValue();
+                        const previewWrapper = elInput.children[0];
+                        const previewImg = previewWrapper.querySelector('img');
+                        const btn = elInput.children[1];
+                        const removeBtn = elInput.children[3];
+                        
+                        if (currentValue && currentValue.trim() !== '') {
+                            previewImg.src = currentValue;
+                            previewWrapper.style.display = 'block';
+                            btn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> GANTI GAMBAR';
+                            removeBtn.style.display = 'flex';
+                        } else {
+                            previewImg.src = '';
+                            previewWrapper.style.display = 'none';
+                            btn.innerHTML = '<i class="ph ph-upload-simple"></i> UPLOAD GAMBAR';
+                            removeBtn.style.display = 'none';
+                        }
+                    }
+                });
+
+                tm.addType('datetime-local', {
+                    createInput({ trait }) {
+                        const input = document.createElement('input');
+                        input.type = 'datetime-local';
+                        input.className = 'w-full px-2 py-2 text-xs border border-gray-300 rounded outline-none focus:border-indigo-500 bg-white font-mono';
+                        return input;
+                    }
+                });
+
+                tm.addType('icon-picker', { noLabel: true, createInput({ trait }) { const btn = document.createElement('button'); btn.className = 'trait-custom-btn w-full bg-[#1e293b] hover:bg-[#0f172a]'; btn.innerHTML = '<i class="ph ph-star"></i> PILIH ICON'; btn.onclick = () => { window.openIconifyPicker(trait.target); }; return btn; } });
+                cmds.add('open-icon-picker', { run(editor, sender, opts) { const selected = editor.getSelected(); if (selected && window.openIconifyPicker) { window.openIconifyPicker(selected); } else { alert('Pilih komponen icon terlebih dahulu'); } } });
+                
+                domc.addType('image', { model: { defaults: { traits: [ { type: 'text', name: 'src', label: 'URL Sumber' }, { type: 'file-upload', name: 'src', label: 'Upload Baru' }, { type: 'text', name: 'alt', label: 'Alt Text' } ] } } });
+
+                window.editor.on('component:selected', () => { this.mobileMenuOpen = false; });
+                window.editor.on('block:drag:stop', () => { this.mobileMenuOpen = false; });
+                window.editor.on('component:selected', (c) => { 
+                    const currentToolbar = c.get('toolbar') || [];
+                    if(currentToolbar.some(i => i.command === 'tlb-move')) return;
+                    c.set('toolbar', [
+                        { attributes: { class: 'fa fa-arrows', title: 'Geser' }, command: 'tlb-move', label: '<i class="ph ph-arrows-out-cardinal"></i>' },
+                        { attributes: { class: 'fa fa-arrow-up', title: 'Parent' }, command: (e) => e.runCommand('core:component-exit'), label: '<i class="ph ph-arrow-fat-up"></i>' },
+                        { attributes: { class: 'fa fa-clone', title: 'Duplicate' }, command: 'tlb-clone', label: '<i class="ph ph-copy"></i>' },
+                        { attributes: { class: 'fa fa-trash', title: 'Delete' }, command: 'tlb-delete', label: '<i class="ph ph-trash text-red-400"></i>' }
+                    ]);
+                });
+            }
+        };
+    }
+    </script>
+</body>
+</html>
+  `)
 })
