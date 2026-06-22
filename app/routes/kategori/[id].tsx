@@ -38,17 +38,17 @@ export default async function (c: any) {
   return c.render(
     <div class="max-w-5xl mx-auto space-y-6 pb-12">
       
-      {/* HEADER KATEGORI */}
-      <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
+      {/* HEADER KATEGORI (Fix Aspect Ratio dengan min-h) */}
+      <div class="relative rounded-3xl overflow-hidden bg-slate-900 min-h-[140px] md:min-h-[200px] shadow-xl mt-4">
          {category.cover_url ? (
            <img src={category.cover_url} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          ) : (
            <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-800 to-slate-900 opacity-80"></div>
          )}
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
-         <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name}</h1>
-           <p class="text-slate-300 mt-2 text-sm md:text-base">
+         <div class="absolute bottom-0 left-0 p-6 md:p-8 flex flex-col justify-end h-full">
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white relative z-10">{category.name}</h1>
+           <p class="text-slate-300 mt-2 text-sm md:text-base relative z-10">
              {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
          </div>
@@ -60,7 +60,7 @@ export default async function (c: any) {
             {subCategories.map((cat: any) => (
               <a 
                 href={`/kategori/${cat.id}`} 
-                class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
+                class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 min-h-[160px] sm:min-h-[180px] md:min-h-[220px] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
                 {coverVis !== 'hidden' && (
                   cat.cover_url ? (
@@ -149,6 +149,7 @@ export default async function (c: any) {
                       <input type="number" id="openAmountInput" placeholder="Contoh: 150000" min="1000" class="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-3 outline-none transition-all font-mono font-bold text-indigo-700 text-lg" />
                     </div>
                  </div>
+
                </div>
 
                <div class="md:col-span-1">
