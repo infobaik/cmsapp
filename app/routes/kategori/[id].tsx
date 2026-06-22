@@ -1,18 +1,20 @@
 import { createRoute } from 'honox/factory'
 
 export default createRoute(async (c) => {
+  // 🔥 KEMBALIKAN SESUAI MEMBER AREA: String murni dari parameter URL
   const id = c.req.param('id')
-  
-  // 1. CEK KATEGORI SAAT INI
+  if (!id) return c.notFound()
+
+  // 1. CEK KATEGORI SAAT INI (100% Sama dengan Member Area)
   const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
   if (!category) return c.notFound()
 
-  // 2. AMBIL PENGATURAN UI GLOBAL (Ditambah fallback array kosong agar tidak crash saat dilooping)
+  // 2. AMBIL PENGATURAN UI GLOBAL
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
-  ;(sysSettings || []).forEach((row: any) => { settings[row.key] = row.value })
+  sysSettings.forEach((row: any) => { settings[row.key] = row.value })
 
-  // 3. CEK APAKAH ADA SUB-KATEGORI?
+  // 3. AMBIL SUB KATEGORI (100% Sama dengan Member Area)
   const { results: subCategories } = await c.env.DB.prepare(`
     SELECT id, name, slug, image_url, cover_url 
     FROM categories 
@@ -20,9 +22,9 @@ export default createRoute(async (c) => {
     ORDER BY name ASC
   `).bind(id).all()
 
-  // 4. JIKA TIDAK ADA SUB-KATEGORI, BARU AMBIL PRODUKNYA
+  // 4. AMBIL PRODUK (100% Sama dengan Member Area, Hanya jika tidak ada sub-kategori)
   let products: any[] = []
-  if ((subCategories || []).length === 0) {
+  if (subCategories.length === 0) {
     const { results } = await c.env.DB.prepare(`
       SELECT p.*, pr.name as provider_name 
       FROM products p
@@ -33,9 +35,8 @@ export default createRoute(async (c) => {
     products = results || []
   }
 
-  // 🔥 PERBAIKAN FATAL DISINI: Pengecekan Kategori Voucher yang AMAN
-  const categoryName = String(category.name || '')
-  const isVoucher = categoryName.toLowerCase().includes('voucher')
+  // Pengecekan Kategori Voucher untuk Peringatan Keamanan
+  const isVoucher = String(category.name).toLowerCase().includes('voucher')
 
   // Logika CSS UI Kategori
   const coverVis = settings.ui_cat_cover_vis || 'all'
@@ -54,25 +55,27 @@ export default createRoute(async (c) => {
   return c.render(
     <div class="max-w-5xl mx-auto space-y-6 pb-12">
       
-      {/* ======================================================== */}
       {/* HEADER KATEGORI (BANNER) */}
-      {/* ======================================================== */}
       <div class="relative rounded-3xl overflow-hidden bg-slate-900 aspect-[4/1] md:aspect-[6/1] shadow-xl mt-4">
-         <img src={(category.cover_url as string) || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={categoryName} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+         {category.cover_url ? (
+           <img src={category.cover_url} alt={category.name} class="absolute inset-0 w-full h-full object-cover opacity-40" />
+         ) : (
+           <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-800 to-slate-900 opacity-80"></div>
+         )}
          <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent"></div>
          <div class="absolute bottom-0 left-0 p-6 md:p-8">
-           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{categoryName}</h1>
+           <h1 class="text-3xl md:text-4xl font-extrabold text-white">{category.name}</h1>
            <p class="text-slate-300 mt-2 text-sm md:text-base">
-             {(subCategories || []).length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
+             {subCategories.length > 0 ? 'Pilih layanan yang ingin Anda gunakan.' : 'Checkout instan. Tanpa daftar, langsung proses!'}
            </p>
          </div>
       </div>
 
-      {(subCategories || []).length > 0 ? (
+      {subCategories.length > 0 ? (
         /* ======================================================== */
         /* FASE 1: TAMPILKAN GRID SUB-KATEGORI (JIKA ADA)           */
         /* ======================================================== */
-        <div class="px-2 mt-8">
+        <div class="px-2">
           <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-4">
             {subCategories.map((cat: any) => (
               <a 
@@ -80,7 +83,11 @@ export default createRoute(async (c) => {
                 class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
                 {coverVis !== 'hidden' && (
-                  <img src={cat.cover_url || 'https://res.cloudinary.com/dqlxjihc9/image/upload/v1781792255/default-cover.png'} alt={cat.name} class={coverClass} />
+                  cat.cover_url ? (
+                    <img src={cat.cover_url} alt={cat.name} class={coverClass} />
+                  ) : (
+                    <div class="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-900 to-slate-800"></div>
+                  )
                 )}
                 <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                 <div class="absolute inset-x-0 bottom-0 p-3 flex flex-col items-start z-10">
@@ -107,8 +114,8 @@ export default createRoute(async (c) => {
         /* ======================================================== */
         /* FASE 2: TAMPILKAN CHECKOUT PRODUK (JIKA TIDAK ADA SUB)   */
         /* ======================================================== */
-        <>
-          <div id="checkoutArea" class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+        <div class="mt-4">
+          <div id="checkoutArea" class="grid grid-cols-1 md:grid-cols-3 gap-6">
              {/* KOLOM KIRI: INPUT DATA & DAFTAR PRODUK */}
              <div class="md:col-span-2 space-y-6">
                 
@@ -145,9 +152,9 @@ export default createRoute(async (c) => {
                          <div class="border border-slate-200 rounded-xl p-4 text-center peer-checked:border-indigo-600 peer-checked:bg-indigo-50 hover:border-indigo-300 transition-all h-full flex flex-col justify-center min-h-[80px]">
                            <h3 class="font-bold text-slate-700 text-sm leading-tight">{p.name}</h3>
                            {p.is_open_amount === 1 ? (
-                             <p class="text-xs text-slate-500 mt-1">+ Rp {Number(p.price || 0).toLocaleString('id-ID')} (Admin)</p>
+                             <p class="text-xs text-slate-500 mt-1">+ Rp {p.price.toLocaleString('id-ID')} (Admin)</p>
                            ) : (
-                             <p class="text-sm font-bold text-indigo-600 mt-1">Rp {Number(p.price || 0).toLocaleString('id-ID')}</p>
+                             <p class="text-sm font-bold text-indigo-600 mt-1">Rp {p.price.toLocaleString('id-ID')}</p>
                            )}
                          </div>
                          <div class="absolute top-2 right-2 hidden peer-checked:block text-indigo-600 bg-white rounded-full">
@@ -235,163 +242,164 @@ export default createRoute(async (c) => {
                 <div id="lblSn" class="font-mono text-xl md:text-2xl font-black text-emerald-800 break-all select-all relative z-10"></div>
              </div>
           </div>
+        </div>
+      )}
 
-          {/* SCRIPT KHUSUS UNTUK CHECKOUT */}
-          <script dangerouslySetInnerHTML={{ __html: `
-            const targetInput = document.getElementById('customerNumber');
-            if (targetInput) {
-                const radios = document.querySelectorAll('input[name="product_id"]');
-                const openAmountContainer = document.getElementById('openAmountContainer');
-                const openAmountInput = document.getElementById('openAmountInput');
-                const btnCheckout = document.getElementById('btnCheckout');
+      {/* SCRIPT KHUSUS UNTUK CHECKOUT */}
+      <script dangerouslySetInnerHTML={{ __html: `
+        const targetInput = document.getElementById('customerNumber');
+        if (targetInput) {
+            const radios = document.querySelectorAll('input[name="product_id"]');
+            const openAmountContainer = document.getElementById('openAmountContainer');
+            const openAmountInput = document.getElementById('openAmountInput');
+            const btnCheckout = document.getElementById('btnCheckout');
+            
+            let selectedProduct = null;
+            let currentPrice = 0;
+
+            function updateSummary() {
+              const target = targetInput.value || '-';
+              document.getElementById('summaryTarget').innerText = target;
+
+              if (selectedProduct) {
+                document.getElementById('summaryName').innerText = selectedProduct.dataset.name;
                 
-                let selectedProduct = null;
-                let currentPrice = 0;
+                if (selectedProduct.dataset.isOpen === '1') {
+                   const inputNominal = parseInt(openAmountInput.value) || 0;
+                   currentPrice = inputNominal + parseInt(selectedProduct.dataset.price);
+                } else {
+                   currentPrice = parseInt(selectedProduct.dataset.price);
+                }
+                document.getElementById('summaryTotal').innerText = 'Rp ' + currentPrice.toLocaleString('id-ID');
+                
+                if (target.length >= 4 && currentPrice > 0) {
+                  btnCheckout.disabled = false;
+                } else {
+                  btnCheckout.disabled = true;
+                }
+              }
+            }
 
-                function updateSummary() {
-                  const target = targetInput.value || '-';
-                  document.getElementById('summaryTarget').innerText = target;
+            radios.forEach(r => {
+              r.addEventListener('change', (e) => {
+                selectedProduct = e.target;
+                if (selectedProduct.dataset.isOpen === '1') {
+                  openAmountContainer.classList.remove('hidden');
+                } else {
+                  openAmountContainer.classList.add('hidden');
+                }
+                updateSummary();
+              });
+            });
 
-                  if (selectedProduct) {
-                    document.getElementById('summaryName').innerText = selectedProduct.dataset.name;
+            targetInput.addEventListener('input', updateSummary);
+            openAmountInput.addEventListener('input', updateSummary);
+
+            let pollInterval = null;
+
+            btnCheckout.addEventListener('click', async () => {
+               const phone = targetInput.value;
+               const email = document.getElementById('guestEmail').value;
+               const productId = selectedProduct.value;
+               const amount = selectedProduct.dataset.isOpen === '1' ? openAmountInput.value : 0;
+
+               btnCheckout.disabled = true;
+               btnCheckout.innerHTML = '<span class="inline-block animate-spin mr-2">↻</span> Memproses...';
+
+               try {
+                 const res = await fetch('/api/public/v1/checkout', {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                   body: newSearchParams({ product_id: productId, customer_number: phone, guest_email: email, amount: amount })
+                 });
+                 
+                 const data = await res.json();
+                 
+                 if (data.success) {
+                    document.getElementById('checkoutArea').classList.add('hidden');
+                    document.getElementById('qrisArea').classList.remove('hidden');
+                    document.getElementById('qrisArea').classList.add('flex');
+
+                    const encodedQris = encodeURIComponent(data.raw_qris);
+                    document.getElementById('qrisImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=' + encodedQris;
                     
-                    if (selectedProduct.dataset.isOpen === '1') {
-                       const inputNominal = parseInt(openAmountInput.value) || 0;
-                       currentPrice = inputNominal + parseInt(selectedProduct.dataset.price);
-                    } else {
-                       currentPrice = parseInt(selectedProduct.dataset.price);
-                    }
-                    document.getElementById('summaryTotal').innerText = 'Rp ' + currentPrice.toLocaleString('id-ID');
-                    
-                    if (target.length >= 4 && currentPrice > 0) {
-                      btnCheckout.disabled = false;
-                    } else {
-                      btnCheckout.disabled = true;
+                    document.getElementById('lblOrderId').innerText = data.order_id;
+                    document.getElementById('lblQrisAmount').innerText = 'Rp ' + parseInt(data.total_price).toLocaleString('id-ID');
+
+                    startCountdown(15 * 60);
+                    startPolling(data.order_id, phone);
+
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                 } else {
+                    alert('Gagal: ' + data.message);
+                    btnCheckout.disabled = false;
+                    btnCheckout.innerText = 'Lanjutkan ke QRIS';
+                 }
+               } catch (e) {
+                 alert('Terjadi kesalahan jaringan.');
+                 btnCheckout.disabled = false;
+                 btnCheckout.innerText = 'Lanjutkan ke QRIS';
+               }
+            });
+
+            function startCountdown(duration) {
+              let timer = duration;
+              const display = document.getElementById('countdownTimer');
+              const interval = setInterval(() => {
+                const m = parseInt(timer / 60, 10);
+                const s = parseInt(timer % 60, 10);
+                display.textContent = (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+                
+                if (--timer < 0) {
+                  clearInterval(interval);
+                  display.textContent = "KADALUARSA";
+                  if (pollInterval) clearInterval(pollInterval);
+                  const box = document.getElementById('paymentStatusBox');
+                  box.className = "w-full px-4 py-3 bg-red-100 text-red-700 text-center rounded-xl text-sm font-semibold border border-red-200 mb-4";
+                  box.innerHTML = "Waktu Habis. Silakan muat ulang halaman.";
+                }
+              }, 1000);
+            }
+
+            function startPolling(orderId, phone) {
+              pollInterval = setInterval(async () => {
+                try {
+                  const res = await fetch('/api/public/v1/track', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ order_id: orderId, phone: phone })
+                  });
+                  const json = await res.json();
+                  
+                  if (json.success) {
+                    const st = json.data.status;
+                    if (st === 'success') {
+                       clearInterval(pollInterval);
+                       const box = document.getElementById('paymentStatusBox');
+                       box.className = "w-full px-4 py-4 bg-emerald-100 text-emerald-700 text-center rounded-2xl text-sm font-bold border border-emerald-300 mb-4 shadow-lg shadow-emerald-500/20";
+                       box.innerHTML = "✅ PEMBAYARAN BERHASIL! Pesanan telah masuk.";
+                       
+                       if (json.data.sn) {
+                          document.getElementById('voucherArea').classList.remove('hidden');
+                          document.getElementById('lblSn').innerText = json.data.sn;
+                       }
+                    } else if (st === 'failed') {
+                       clearInterval(pollInterval);
+                       const box = document.getElementById('paymentStatusBox');
+                       box.className = "w-full px-4 py-4 bg-red-100 text-red-700 text-center rounded-2xl text-sm font-semibold border border-red-300 mb-4";
+                       box.innerHTML = "❌ PESANAN GAGAL/DIBATALKAN. Silakan hubungi CS.";
                     }
                   }
-                }
-
-                radios.forEach(r => {
-                  r.addEventListener('change', (e) => {
-                    selectedProduct = e.target;
-                    if (selectedProduct.dataset.isOpen === '1') {
-                      openAmountContainer.classList.remove('hidden');
-                    } else {
-                      openAmountContainer.classList.add('hidden');
-                    }
-                    updateSummary();
-                  });
-                });
-
-                targetInput.addEventListener('input', updateSummary);
-                openAmountInput.addEventListener('input', updateSummary);
-
-                let pollInterval = null;
-
-                btnCheckout.addEventListener('click', async () => {
-                   const phone = targetInput.value;
-                   const email = document.getElementById('guestEmail').value;
-                   const productId = selectedProduct.value;
-                   const amount = selectedProduct.dataset.isOpen === '1' ? openAmountInput.value : 0;
-
-                   btnCheckout.disabled = true;
-                   btnCheckout.innerHTML = '<span class="inline-block animate-spin mr-2">↻</span> Memproses...';
-
-                   try {
-                     const res = await fetch('/api/public/v1/checkout', {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                       body: newSearchParams({ product_id: productId, customer_number: phone, guest_email: email, amount: amount })
-                     });
-                     
-                     const data = await res.json();
-                     
-                     if (data.success) {
-                        document.getElementById('checkoutArea').classList.add('hidden');
-                        document.getElementById('qrisArea').classList.remove('hidden');
-                        document.getElementById('qrisArea').classList.add('flex');
-
-                        const encodedQris = encodeURIComponent(data.raw_qris);
-                        document.getElementById('qrisImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=' + encodedQris;
-                        
-                        document.getElementById('lblOrderId').innerText = data.order_id;
-                        document.getElementById('lblQrisAmount').innerText = 'Rp ' + parseInt(data.total_price).toLocaleString('id-ID');
-
-                        startCountdown(15 * 60);
-                        startPolling(data.order_id, phone);
-
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                     } else {
-                        alert('Gagal: ' + data.message);
-                        btnCheckout.disabled = false;
-                        btnCheckout.innerText = 'Lanjutkan ke QRIS';
-                     }
-                   } catch (e) {
-                     alert('Terjadi kesalahan jaringan.');
-                     btnCheckout.disabled = false;
-                     btnCheckout.innerText = 'Lanjutkan ke QRIS';
-                   }
-                });
-
-                function startCountdown(duration) {
-                  let timer = duration;
-                  const display = document.getElementById('countdownTimer');
-                  const interval = setInterval(() => {
-                    const m = parseInt(timer / 60, 10);
-                    const s = parseInt(timer % 60, 10);
-                    display.textContent = (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
-                    
-                    if (--timer < 0) {
-                      clearInterval(interval);
-                      display.textContent = "KADALUARSA";
-                      if (pollInterval) clearInterval(pollInterval);
-                      const box = document.getElementById('paymentStatusBox');
-                      box.className = "w-full px-4 py-3 bg-red-100 text-red-700 text-center rounded-xl text-sm font-semibold border border-red-200 mb-4";
-                      box.innerHTML = "Waktu Habis. Silakan muat ulang halaman.";
-                    }
-                  }, 1000);
-                }
-
-                function startPolling(orderId, phone) {
-                  pollInterval = setInterval(async () => {
-                    try {
-                      const res = await fetch('/api/public/v1/track', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: new URLSearchParams({ order_id: orderId, phone: phone })
-                      });
-                      const json = await res.json();
-                      
-                      if (json.success) {
-                        const st = json.data.status;
-                        if (st === 'success') {
-                           clearInterval(pollInterval);
-                           const box = document.getElementById('paymentStatusBox');
-                           box.className = "w-full px-4 py-4 bg-emerald-100 text-emerald-700 text-center rounded-2xl text-sm font-bold border border-emerald-300 mb-4 shadow-lg shadow-emerald-500/20";
-                           box.innerHTML = "✅ PEMBAYARAN BERHASIL! Pesanan telah masuk.";
-                           
-                           if (json.data.sn) {
-                              document.getElementById('voucherArea').classList.remove('hidden');
-                              document.getElementById('lblSn').innerText = json.data.sn;
-                           }
-                        } else if (st === 'failed') {
-                           clearInterval(pollInterval);
-                           const box = document.getElementById('paymentStatusBox');
-                           box.className = "w-full px-4 py-4 bg-red-100 text-red-700 text-center rounded-2xl text-sm font-semibold border border-red-300 mb-4";
-                           box.innerHTML = "❌ PESANAN GAGAL/DIBATALKAN. Silakan hubungi CS.";
-                        }
-                      }
-                    } catch (e) {}
-                  }, 3000);
-                }
-                
-                function newSearchParams(obj) {
-                    return Object.keys(obj).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(obj[k])).join('&');
-                }
+                } catch (e) {}
+              }, 3000);
             }
-          `}} />
-        </>
-      )}
-    </div>
+            
+            function newSearchParams(obj) {
+                return Object.keys(obj).map(k => encodeURIComponent(k) + '=' + encodeURIComponent(obj[k])).join('&');
+            }
+        }
+      `}} />
+    </div>,
+    { title: `Beli ${category.name}` }
   )
 })
