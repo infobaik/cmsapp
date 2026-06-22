@@ -274,7 +274,6 @@ export default createRoute(async (c) => {
         function debounce(func, timeout = 300){ let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => { func.apply(this, args); }, timeout); }; }
     })();
 
-    // 🔥 PERBAIKAN 1: Cegah Error jika string kosong atau undefined
     function getElementorIcon(category, id) {
         const cat = (category || 'Custom').toLowerCase();
         const ident = (String(id) || '').toLowerCase();
@@ -321,14 +320,12 @@ export default createRoute(async (c) => {
                     
                     widgets.forEach(w => {
                         try {
-                            // 🔥 PERBAIKAN 2: Paksa ID menjadi String. GrapesJS akan Crash jika ID berupa Integer (Angka)
                             const safeId = String(w.id);
                             const safeCategory = w.category || 'Custom';
                             const safeLabel = w.label || w.title || w.type || safeId;
                             
                             appBuilderCache[safeId] = w;
                             
-                            // 🔥 PERBAIKAN 3: Jika kontennya berupa JSON (seperti "[{...}]"), bungkus dengan HTML agar GrapesJS tidak meledak
                             let safeContent = w.content || '';
                             if (typeof safeContent === 'string' && (safeContent.trim().startsWith('{') || safeContent.trim().startsWith('['))) {
                                 safeContent = \`<div class="p-4 bg-gray-100 text-gray-500 border border-dashed border-gray-300 text-xs text-center font-mono">
@@ -339,10 +336,11 @@ export default createRoute(async (c) => {
 
                             let dbConfig = safeJSONParse(w.attributes);
 
+                            // 🔥 PERBAIKAN MUTLAK GrapesJS: Tambahkan 'data-widget-id' agar atribut terselamatkan saat disave ke HTML
                             let compDefaults = {
                                 ...dbConfig,
                                 tagName: dbConfig.tagName || 'div',
-                                attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': safeId },
+                                attributes: { ...(dbConfig.attributes || {}), 'data-gjs-type': safeId, 'data-widget-id': safeId },
                                 traits: dbConfig.traits || []
                             };
 
@@ -354,7 +352,8 @@ export default createRoute(async (c) => {
 
                             domc.addType(safeId, {
                                 isComponent: el => {
-                                    if (el.getAttribute && el.getAttribute('data-gjs-type') === safeId) {
+                                    // 🔥 PERBAIKAN MUTLAK GrapesJS: Cek 'data-widget-id' karena 'data-gjs-type' pasti akan terhapus oleh Grapes saat export HTML
+                                    if (el.getAttribute && (el.getAttribute('data-gjs-type') === safeId || el.getAttribute('data-widget-id') === safeId)) {
                                         return { type: safeId };
                                     }
                                 },
