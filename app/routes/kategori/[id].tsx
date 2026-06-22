@@ -3,11 +3,11 @@ import { createRoute } from 'honox/factory'
 export default createRoute(async (c) => {
   const id = c.req.param('id')
   
-  // 1. CEK KATEGORI LANGSUNG DARI DB (MENGHINDARI SELF-FETCHING API)
+  // 1. CEK KATEGORI DARI DB
   const category = await c.env.DB.prepare(`SELECT * FROM categories WHERE id = ?`).bind(id).first()
   if (!category) return c.notFound()
 
-  // 2. AMBIL PENGATURAN UI GLOBAL DARI DB
+  // 2. AMBIL PENGATURAN UI GLOBAL
   const { results: sysSettings } = await c.env.DB.prepare(`SELECT key, value FROM system_settings WHERE key LIKE 'ui_cat_%'`).all()
   const settings: Record<string, string> = {}
   ;(sysSettings || []).forEach((row: any) => { settings[row.key] = row.value })
@@ -33,7 +33,6 @@ export default createRoute(async (c) => {
     products = results || []
   }
 
-  // 5. DEKLARASI VARIABEL VISUAL
   const categoryName = String(category.name || '')
   const isVoucher = categoryName.toLowerCase().includes('voucher')
 
@@ -50,12 +49,19 @@ export default createRoute(async (c) => {
   const coverClass = getVisClass(coverVis, 'block') + "absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100"
   const iconClass = getVisClass(iconVis, 'flex') + "w-8 h-8 md:w-10 md:h-10 mb-2 rounded-xl bg-white/20 backdrop-blur-md border border-white/20 p-1.5 items-center justify-center shadow-lg group-hover:bg-white/30 transition-colors"
 
-  // 6. RENDER HTML KE BROWSER
   return c.render(
-    <div class="max-w-5xl mx-auto space-y-6 pb-12">
+    /* 🔥 PERBAIKAN 1: MENGGUNAKAN max-w-7xl AGAR LEBARNYA SAMA DENGAN MEMBER AREA */
+    <div class="max-w-7xl mx-auto space-y-6 pb-12">
       
+      {/* 🔥 PERBAIKAN 2: MENAMBAHKAN BREADCRUMB AGAR UI SEIMBANG */}
+      <div class="flex items-center space-x-2 text-sm text-slate-400 px-2 mt-4 mb-2">
+        <a href="/" class="hover:text-indigo-400 transition-colors font-medium">Beranda</a>
+        <span>&rsaquo;</span>
+        <span class="font-semibold text-slate-200">{categoryName}</span>
+      </div>
+
       {/* HEADER KATEGORI */}
-      <div class="relative rounded-3xl overflow-hidden bg-slate-900 min-h-[140px] md:min-h-[200px] shadow-xl mt-4">
+      <div class="relative rounded-3xl overflow-hidden bg-slate-900 min-h-[140px] md:min-h-[200px] shadow-xl">
          {category.cover_url && String(category.cover_url).startsWith('http') ? (
            <img src={category.cover_url as string} alt={categoryName} class="absolute inset-0 w-full h-full object-cover opacity-40" />
          ) : (
@@ -76,9 +82,9 @@ export default createRoute(async (c) => {
             {subCategories.map((cat: any) => (
               <a 
                 href={`/kategori/${cat.id}`} 
-                class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 min-h-[160px] sm:min-h-[180px] md:min-h-[220px] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
+                /* 🔥 PERBAIKAN 3: MENGGANTI min-h MENJADI aspect-[2/3] AGAR KARTU RAPIH (POSTER) */
+                class="group relative block rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900 transform hover:-translate-y-1"
               >
-                {/* FILTER STARTSWITH HTTP AGAR GAMBAR TIDAK ERROR 404 */}
                 {coverVis !== 'hidden' && (
                   cat.cover_url && String(cat.cover_url).startsWith('http') ? (
                     <img src={cat.cover_url} alt={cat.name} class={coverClass} />
