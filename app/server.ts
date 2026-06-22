@@ -23,7 +23,7 @@ app.onError((err, c) => {
         <p><strong>Pesan Error:</strong> ${err.message}</p>
         <div style="margin-top: 1rem;">
           <strong>Stack Trace:</strong>
-          <pre style="background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 14px;">${err.stack}</pre>
+          <pre style="background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 14px; white-space: pre-wrap; word-break: break-all;">${err.stack}</pre>
         </div>
       </div>
     </div>
